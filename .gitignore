@@ -1,0 +1,8 @@
+bin/
+obj/
+dist/
+*.user
+.vs/
+# local working notes and captures
+HANDOFF.md
+diagnostics/
