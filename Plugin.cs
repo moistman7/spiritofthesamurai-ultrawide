@@ -20,7 +20,7 @@ namespace SpiritOfTheSamuraiUltrawide
     //  - Videos are 16:9 RawImages, so the scene shows beside them instead of black bars.
     //  - Menus park their hidden pages one 16:9 screen-width off-center, which is now partly on screen.
     //  - Camera-attached backdrops and overlays (sky, vignette, damage border) are sized to the 16:9 view.
-    [BepInPlugin("renodx.spiritofthesamurai.ultrawide", "Spirit of the Samurai Ultrawide", "1.8.1")]
+    [BepInPlugin("renodx.spiritofthesamurai.ultrawide", "Spirit of the Samurai Ultrawide", "1.9.0")]
     public class Plugin : BaseUnityPlugin
     {
         private static readonly Rect FullViewport = new Rect(0f, 0f, 1f, 1f);
@@ -30,10 +30,13 @@ namespace SpiritOfTheSamuraiUltrawide
 
         internal static BepInEx.Logging.ManualLogSource Log;
         internal static ConfigEntry<bool> EnableSceneInventory;
+        internal static ConfigEntry<bool> LimitResolutionToDisplay;
 
         private void Awake()
         {
             Log = Logger;
+            LimitResolutionToDisplay = Config.Bind("Display", "LimitResolutionToDisplay", true,
+                "Cap fitted resolution presets to the display size (recommended for Steam Deck). Disable to allow supersampling.");
             EnableSceneInventory = Config.Bind("Diagnostics", "EnableSceneInventory", false,
                 "Write scene inventories automatically for troubleshooting. F9 writes an inventory manually even when this is disabled.");
             Harmony.CreateAndPatchAll(typeof(Plugin));
@@ -144,7 +147,10 @@ namespace SpiritOfTheSamuraiUltrawide
         [HarmonyPatch(typeof(Screen), nameof(Screen.SetResolution), typeof(int), typeof(int), typeof(bool), typeof(int))]
         private static void FitResolutionToDisplay(ref int width, ref int height)
         {
-            float display_aspect = (float)Display.main.systemWidth / Display.main.systemHeight;
+            int displayWidth = Display.main.systemWidth;
+            int displayHeight = Display.main.systemHeight;
+            if (displayWidth < 2 || displayHeight < 2 || width < 2 || height < 2) return;
+            float display_aspect = (float)displayWidth / displayHeight;
             if ((float)width / height < display_aspect)
             {
                 width = Mathf.RoundToInt(height * display_aspect) & ~1;
@@ -153,6 +159,15 @@ namespace SpiritOfTheSamuraiUltrawide
             {
                 height = Mathf.RoundToInt(width / display_aspect) & ~1;
             }
+            // High quality presets can exceed the Deck's 1280x800 display. Keep lower
+            // presets available, but avoid rendering above native resolution by default.
+            if (LimitResolutionToDisplay.Value && (width > displayWidth || height > displayHeight))
+            {
+                width = displayWidth & ~1;
+                height = displayHeight & ~1;
+            }
+            width = Mathf.Max(2, width);
+            height = Mathf.Max(2, height);
         }
 
         [HarmonyPrefix]
@@ -386,6 +401,8 @@ namespace SpiritOfTheSamuraiUltrawide
 
         private void LateUpdate()
         {
+            // These are horizontal expansion fixes; 16:10 handhelds do not need them.
+            if (Screen.width <= Screen.height * 16f / 9f && fits.Count == 0) return;
             // Animated sprites (the pulsing damage border) get their scale rewritten every frame, so reapply the
             // stored factor after animation whenever the scale is no longer the one applied last.
             foreach (KeyValuePair<SpriteRenderer, Fit> entry in fits)

@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.9.0
+- Experimental Steam Deck / SteamOS support with Proton installation and Steam Input diagnostic instructions.
+- Fitted resolution presets are capped to the display size by default, avoiding supersampling
+  on 1280x800 displays. Set Display.LimitResolutionToDisplay=false to restore uncapped presets.
+- Ignore invalid resolution/display sizes and skip sprite-widening discovery on 16:9 or narrower displays.
+- Steam Deck gameplay and Proton loading still require hardware validation.
+
 ## 1.8.1
 - Sky backdrops and overlay sprites now overscan the screen edges by 6% and are re-widened if the
   camera later shrinks them. Fixes thin strips at the top left/right corners.
