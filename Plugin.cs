@@ -373,13 +373,15 @@ namespace SpiritOfTheSamuraiUltrawide
             owner = GetComponent<Camera>();
         }
 
-        // The RenoDX HUD companion moves UI/Canvas to its own camera, a copy of the scene camera
-        // placed at the same pose, so its sprites still need this camera's projection.
-        private bool IsHudCameraOf(Camera hud)
+        // Another camera at (nearly) the same pose and lens as this one, e.g. a camera that renders
+        // the UI canvas separately and copies this camera each frame, projects sprites as this one does.
+        private bool SharesViewWith(Camera other)
         {
-            return hud != null && hud != owner && hud.name == "SamuraiHudCamera"
-                && Vector3.SqrMagnitude(hud.transform.position - owner.transform.position) < 0.0001f
-                && Mathf.Approximately(hud.fieldOfView, owner.fieldOfView);
+            return other != null && other != owner && other.orthographic == owner.orthographic
+                && Vector3.SqrMagnitude(other.transform.position - owner.transform.position) < 1f
+                && Quaternion.Angle(other.transform.rotation, owner.transform.rotation) < 1f
+                && Mathf.Abs(other.fieldOfView - owner.fieldOfView) < 0.5f
+                && Mathf.Abs(other.orthographicSize - owner.orthographicSize) < 0.5f;
         }
 
         private void LateUpdate()
@@ -400,7 +402,7 @@ namespace SpiritOfTheSamuraiUltrawide
             IEnumerable<SpriteRenderer> sprites = GetComponentsInChildren<SpriteRenderer>();
             foreach (Canvas canvas in FindObjectsOfType<Canvas>())
             {
-                if (canvas.isRootCanvas && (canvas.worldCamera == owner || IsHudCameraOf(canvas.worldCamera)))
+                if (canvas.isRootCanvas && (canvas.worldCamera == owner || SharesViewWith(canvas.worldCamera)))
                 {
                     sprites = sprites.Concat(canvas.GetComponentsInChildren<SpriteRenderer>());
                 }

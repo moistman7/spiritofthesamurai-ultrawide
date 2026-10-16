@@ -1,4 +1,4 @@
-﻿# The Spirit of the Samurai — Ultrawide
+# The Spirit of the Samurai — Ultrawide
 
 A BepInEx 5 plugin that removes the 16:9 lock in *The Spirit of the Samurai* (Windows, Unity/Mono)
 and fixes the things that break once the view is wider. Tested at 3440x1440 (21:9).
@@ -12,9 +12,6 @@ and fixes the things that break once the view is wider. Tested at 3440x1440 (21:
 - Rescales the HUD for wide screens and clips parked menu pages so neighboring pages don't peek in.
 - Widens sky backdrops and the damage-border sprite so they reach the screen edges.
 - Adds black bars outside full-screen cutscene video.
-
-HDR HUD brightness and vignette removal (the game's RenoDX HDR setup) are a separate plugin,
-**The Spirit of the Samurai — RenoDX HUD**. The two are independent: install either or both.
 
 ## Requirements
 
@@ -39,8 +36,6 @@ fixes have no settings and are always on. The only option is:
 | Setting | Default | Meaning |
 |---|---|---|
 | `Diagnostics.EnableSceneInventory` | `false` | Write a scene dump to `BepInEx/diagnostics` automatically (for bug reports). F9 writes one on demand. |
-
-Entries named `SeparateHud` and `DisableVignette` from 1.7.x are no longer used and can be ignored.
 
 ## Known limitations
 
