@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.11.0 — 2026-10-17
+- Configurable controller shortcut modifier and buttons, with held D-pad/arrow navigation and numeric adjustment.
+- Dialogue, Display and Controller settings pages, saved dialogue history with atomic replacement/recovery,
+  clear-history confirmation, and adjustable history text size (18–40).
+- Existing player-light toggle (F4 or Select/Back + X by default); preserves original light states on return.
+- Cache/amortize history layout, draw visible rows only, reuse voice/sprite buffers, suspend input actions on
+  change, and debounce config/history disk writes onto workers. No in-game frame-time benchmark yet.
+- Add game-independent regression checks for input repeat, visible-row search and history persistence/recovery.
+
 ## 1.10.0 — 2026-10-17
 - Fix voice tracking being cleared when finishing one subtitle synchronously starts the next. History retains
   each voiced line's asset path and reloads voices on demand so older entries remain replayable.

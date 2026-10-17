@@ -20,7 +20,7 @@ namespace SpiritOfTheSamuraiUltrawide
     //  - Videos are 16:9 RawImages, so the scene shows beside them instead of black bars.
     //  - Menus park their hidden pages one 16:9 screen-width off-center, which is now partly on screen.
     //  - Camera-attached backdrops and overlays (sky, vignette, damage border) are sized to the 16:9 view.
-    [BepInPlugin("renodx.spiritofthesamurai.ultrawide", "Spirit of the Samurai Ultrawide", "1.10.0")]
+    [BepInPlugin("renodx.spiritofthesamurai.ultrawide", "Spirit of the Samurai Ultrawide", "1.11.0")]
     public class Plugin : BaseUnityPlugin
     {
         private static readonly Rect FullViewport = new Rect(0f, 0f, 1f, 1f);
@@ -47,6 +47,7 @@ namespace SpiritOfTheSamuraiUltrawide
                 "Skip the start-up logo videos and go straight to the main menu.");
             DialogueAdvance.Init(Config);
             DialogueHistory.Init(Config);
+            PlayerLight.Init(Config);
             ModMenu.Init(Config);
             Harmony.CreateAndPatchAll(typeof(Plugin));
             Harmony.CreateAndPatchAll(typeof(DialogueAdvance));
@@ -55,6 +56,11 @@ namespace SpiritOfTheSamuraiUltrawide
         }
 
         private void OnDestroy() => ModMenu.Shutdown();
+        private void OnApplicationQuit()
+        {
+            DialogueHistory.Flush();
+            ModMenu.FlushConfig();
+        }
 
         internal static void WriteSceneInventory(string phase)
         {
@@ -107,6 +113,7 @@ namespace SpiritOfTheSamuraiUltrawide
         private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
         {
             ModMenu.Shutdown();
+            PlayerLight.SceneLoaded();
             WriteSceneInventory("loaded");
             DialogueAdvance.SceneLoaded();
             if (mode == LoadSceneMode.Single)

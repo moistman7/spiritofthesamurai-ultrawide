@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using BepInEx.Configuration;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -13,6 +14,13 @@ namespace SpiritOfTheSamuraiUltrawide
         private static ConfigFile config;
         private static ModMenu window;
         private static readonly List<InputAction> suspended = new List<InputAction>();
+        private static readonly List<InputAction> enabled_actions = new List<InputAction>();
+        private static readonly HashSet<InputAction> suspended_set = new HashSet<InputAction>();
+        private static bool input_dirty;
+        private static int input_sync_frame = -1;
+        private static int config_revision, config_saved;
+        private static float config_save_after;
+        private static Task config_save_task;
         private static bool owns_input;
         private static float saved_time_scale;
         private static bool saved_cursor;
@@ -20,6 +28,17 @@ namespace SpiritOfTheSamuraiUltrawide
         private static int closed_frame;
         private static int consumed_frame = -1;
         private int selected;
+        private int page;
+        private RepeatGate vertical_repeat, horizontal_repeat;
+        private float confirm_clear_until;
+        private static readonly string[] page_names = { "Dialogue", "Display", "Controller" };
+        private static readonly int[][] page_rows = {
+            new[] { 0, 1, 2, 3, 4, 10, 11, 12, 8, 9 },
+            new[] { 5, 6, 17, 9 },
+            new[] { 7, 13, 14, 15, 16, 18, 9 }
+        };
+        private readonly string[] labels = new string[19];
+        private bool labels_dirty = true;
         private GUIStyle row_style;
         private GUIStyle heading_style;
         private GUIStyle help_style;
@@ -37,6 +56,42 @@ namespace SpiritOfTheSamuraiUltrawide
             menu_key = file.Bind("Menu", "Key", KeyCode.F1, "Open or close mod settings. Set to None to disable the keyboard shortcut.");
             controller_shortcuts = file.Bind("Controller", "EnableShortcuts", true,
                 "Enable mod controller shortcuts: hold Select/Back and press LB for settings, RB for history, or Y for auto/manual dialogue. D-pad navigates panels, A activates, B closes.");
+            ControllerInput.Init(file);
+            file.SaveOnConfigSet = false;
+            file.SettingChanged += OnSettingChanged;
+            InputSystem.onActionChange += OnActionChange;
+            config_revision = 1;
+        }
+
+        private static void OnSettingChanged(object sender, SettingChangedEventArgs args)
+        {
+            ++config_revision;
+            config_save_after = Time.unscaledTime + 1f;
+            if (window != null) window.labels_dirty = true;
+        }
+
+        private static void OnActionChange(object subject, InputActionChange change)
+        {
+            if (owns_input && (change == InputActionChange.ActionEnabled || change == InputActionChange.ActionMapEnabled)) input_dirty = true;
+        }
+
+        private static void SaveConfigTick()
+        {
+            if (config_save_task != null && config_save_task.IsCompleted)
+            {
+                if (config_save_task.IsFaulted)
+                {
+                    Plugin.Log.LogWarning($"[menu] settings save failed: {config_save_task.Exception.GetBaseException().Message}");
+                    config_saved = -1;
+                    config_save_after = Time.unscaledTime + 10;
+                }
+                config_save_task = null;
+            }
+            if (config_save_task == null && config_saved != config_revision && Time.unscaledTime >= config_save_after)
+            {
+                config_saved = config_revision;
+                config_save_task = Task.Run(() => config.Save());
+            }
         }
 
         internal static void Attach(GameObject host)
@@ -51,7 +106,7 @@ namespace SpiritOfTheSamuraiUltrawide
             bool open = !IsOpen;
             DialogueHistory.Close();
             window.enabled = open;
-            if (open) window.selected = 0;
+            if (open) { window.selected = 0; window.vertical_repeat = default; window.horizontal_repeat = default; window.labels_dirty = true; }
             consumed_frame = Time.frameCount;
             Plugin.Log.LogInfo($"[menu] settings {(open ? "opened" : "closed")}.");
             SyncInput();
@@ -64,19 +119,25 @@ namespace SpiritOfTheSamuraiUltrawide
 
         internal static void Tick()
         {
+            SaveConfigTick();
             Gamepad pad = Pad;
-            bool modifier = controller_shortcuts.Value && pad != null && pad.selectButton.isPressed;
+            int shortcut = ControllerInput.Shortcut(pad, ControllerShortcuts);
             if ((menu_key.Value != KeyCode.None && Input.GetKeyDown(menu_key.Value)) ||
-                (modifier && pad.leftShoulder.wasPressedThisFrame)) Toggle();
-            else if (modifier && pad.rightShoulder.wasPressedThisFrame)
+                shortcut == 1) Toggle();
+            else if (shortcut == 2)
             {
                 Close();
                 DialogueHistory.Toggle();
                 consumed_frame = Time.frameCount;
             }
-            else if (!InputBlocked && modifier && pad.buttonNorth.wasPressedThisFrame)
+            else if (!InputBlocked && shortcut == 3)
             {
                 DialogueAdvance.Toggle();
+                consumed_frame = Time.frameCount;
+            }
+            else if (!InputBlocked && shortcut == 4)
+            {
+                PlayerLight.Enabled = !PlayerLight.Enabled;
                 consumed_frame = Time.frameCount;
             }
             else if (IsOpen)
@@ -88,15 +149,33 @@ namespace SpiritOfTheSamuraiUltrawide
                 }
                 else
                 {
-                    int vertical = Direction(KeyCode.UpArrow, KeyCode.DownArrow, pad?.dpad.up, pad?.dpad.down);
-                    window.selected = (window.selected + vertical + 10) % 10;
-                    int horizontal = Direction(KeyCode.LeftArrow, KeyCode.RightArrow, pad?.dpad.left, pad?.dpad.right);
+                    bool modifier = pad != null && ControllerInput.Modifier.Value != PadButton.None && ControllerInput.ModifierHeld(pad);
+                    if (Input.GetKeyDown(KeyCode.Tab) || (!modifier && pad != null && pad.rightShoulder.wasPressedThisFrame)) window.ChangePage(1);
+                    else if (!modifier && pad != null && pad.leftShoulder.wasPressedThisFrame) window.ChangePage(-1);
+                    int count = page_rows[window.page].Length;
+                    int vertical = ControllerInput.Repeat(ref window.vertical_repeat, KeyCode.UpArrow, KeyCode.DownArrow, pad?.dpad.up, pad?.dpad.down);
+                    window.selected = (window.selected + vertical + count) % count;
+                    int horizontal = ControllerInput.Repeat(ref window.horizontal_repeat, KeyCode.LeftArrow, KeyCode.RightArrow, pad?.dpad.left, pad?.dpad.right);
                     bool activate = Input.GetKeyDown(KeyCode.Return) || (pad != null && pad.buttonSouth.wasPressedThisFrame);
-                    if (horizontal != 0 || activate) Change(window.selected, horizontal == 0 ? 1 : horizontal);
+                    int row = page_rows[window.page][window.selected];
+                    // Only numeric/cycling rows repeat. A held direction must not flip toggles repeatedly.
+                    bool toggle = row == 0 || row == 2 || row == 5 || row == 6 || row == 7 || row == 11 || row == 17;
+                    bool tapped = toggle && Direction(KeyCode.LeftArrow, KeyCode.RightArrow, pad?.dpad.left, pad?.dpad.right) != 0;
+                    if (activate || tapped || (horizontal != 0 && IsNumeric(row))) Change(row, horizontal == 0 ? 1 : horizontal);
                 }
             }
             SyncInput();
         }
+
+        private void ChangePage(int direction)
+        {
+            page = (page + direction + page_names.Length) % page_names.Length;
+            selected = 0;
+            vertical_repeat = default;
+            horizontal_repeat = default;
+        }
+
+        private static bool IsNumeric(int row) => row == 1 || row == 3 || row == 4 || row == 10 || (row >= 13 && row <= 16) || row == 18;
 
         internal static int Direction(KeyCode negative, KeyCode positive,
             UnityEngine.InputSystem.Controls.ButtonControl minus, UnityEngine.InputSystem.Controls.ButtonControl plus)
@@ -116,15 +195,21 @@ namespace SpiritOfTheSamuraiUltrawide
                     saved_cursor = Cursor.visible;
                     saved_lock = Cursor.lockState;
                     owns_input = true;
+                    input_dirty = true;
                 }
                 closed_frame = Time.frameCount;
                 Time.timeScale = 0f;
                 Cursor.lockState = CursorLockMode.None;
                 Cursor.visible = true;
                 // Snapshot individual actions: a partly enabled map must stay partly enabled on return.
-                foreach (InputAction action in InputSystem.ListEnabledActions())
+                if (!input_dirty || input_sync_frame == Time.frameCount) return;
+                input_sync_frame = Time.frameCount;
+                input_dirty = false;
+                enabled_actions.Clear();
+                InputSystem.ListEnabledActions(enabled_actions);
+                foreach (InputAction action in enabled_actions)
                 {
-                    if (!suspended.Contains(action)) suspended.Add(action);
+                    if (suspended_set.Add(action)) suspended.Add(action);
                     action.Disable();
                 }
             }
@@ -135,7 +220,11 @@ namespace SpiritOfTheSamuraiUltrawide
         {
             if (Input.GetKey(KeyCode.Return) || Input.GetKey(KeyCode.Space) || Input.GetKey(KeyCode.Escape) || Input.GetMouseButton(0)) return false;
             Gamepad pad = Gamepad.current;
-            return pad == null || !(pad.selectButton.isPressed || pad.buttonSouth.isPressed || pad.buttonEast.isPressed ||
+            return pad == null || !(ControllerInput.Control(pad, ControllerInput.Modifier.Value)?.isPressed == true ||
+                ControllerInput.Control(pad, ControllerInput.Menu.Value)?.isPressed == true ||
+                ControllerInput.Control(pad, ControllerInput.History.Value)?.isPressed == true ||
+                ControllerInput.Control(pad, ControllerInput.Auto.Value)?.isPressed == true || pad.selectButton.isPressed || pad.buttonSouth.isPressed || pad.buttonEast.isPressed ||
+                ControllerInput.Control(pad, ControllerInput.Light.Value)?.isPressed == true ||
                 pad.buttonNorth.isPressed || pad.leftShoulder.isPressed || pad.rightShoulder.isPressed ||
                 pad.dpad.up.isPressed || pad.dpad.down.isPressed || pad.dpad.left.isPressed || pad.dpad.right.isPressed);
         }
@@ -153,6 +242,7 @@ namespace SpiritOfTheSamuraiUltrawide
                 catch (System.Exception e) { Plugin.Log.LogDebug($"[menu] could not restore action: {e.Message}"); }
             }
             suspended.Clear();
+            suspended_set.Clear();
         }
 
         internal static void Shutdown()
@@ -160,6 +250,16 @@ namespace SpiritOfTheSamuraiUltrawide
             Close();
             DialogueHistory.Close();
             ReleaseInput();
+        }
+
+        internal static void FlushConfig()
+        {
+            try
+            {
+                config_save_task?.Wait(2000);
+                if (config_saved != config_revision) config.Save();
+            }
+            catch (System.Exception e) { Plugin.Log.LogWarning($"[menu] final settings save failed: {e.GetBaseException().Message}"); }
         }
 
         private static string Label(int row)
@@ -175,6 +275,15 @@ namespace SpiritOfTheSamuraiUltrawide
                 case 6: return "Cap resolution to display (next resolution change): " + (Plugin.LimitResolutionToDisplay.Value ? "On" : "Off");
                 case 7: return "Controller shortcuts: " + (ControllerShortcuts ? "On" : "Off");
                 case 8: return "Open dialogue history";
+                case 10: return $"History text size: {DialogueHistory.TextSize}";
+                case 11: return "Save dialogue history: " + (DialogueHistory.SaveHistory ? "On" : "Off");
+                case 12: return window.confirm_clear_until > Time.unscaledTime ? "Clear history? Press again to confirm" : "Clear dialogue history";
+                case 13: return "Shortcut modifier: " + ControllerInput.Name(ControllerInput.Modifier.Value);
+                case 14: return "Mod menu button: " + ControllerInput.Name(ControllerInput.Menu.Value);
+                case 15: return "History button: " + ControllerInput.Name(ControllerInput.History.Value);
+                case 16: return "Auto/manual button: " + ControllerInput.Name(ControllerInput.Auto.Value);
+                case 17: return "Existing player lights: " + (PlayerLight.Enabled ? "Game default" : "Off");
+                case 18: return "Player light button: " + ControllerInput.Name(ControllerInput.Light.Value);
                 default: return "Close";
             }
         }
@@ -193,8 +302,20 @@ namespace SpiritOfTheSamuraiUltrawide
                 case 7: ControllerShortcuts = !ControllerShortcuts; break;
                 case 8: Close(); DialogueHistory.Toggle(); break;
                 case 9: Close(); break;
+                case 10: DialogueHistory.TextSize += direction * 2; break;
+                case 11: DialogueHistory.SaveHistory = !DialogueHistory.SaveHistory; break;
+                case 12:
+                    if (window.confirm_clear_until > Time.unscaledTime) { DialogueHistory.Clear(); window.confirm_clear_until = 0; }
+                    else window.confirm_clear_until = Time.unscaledTime + 4;
+                    break;
+                case 13: ControllerInput.Cycle(ControllerInput.Modifier, direction); break;
+                case 14: ControllerInput.Cycle(ControllerInput.Menu, direction); break;
+                case 15: ControllerInput.Cycle(ControllerInput.History, direction); break;
+                case 16: ControllerInput.Cycle(ControllerInput.Auto, direction); break;
+                case 17: PlayerLight.Enabled = !PlayerLight.Enabled; break;
+                case 18: ControllerInput.Cycle(ControllerInput.Light, direction); break;
             }
-            config.Save();
+            window.labels_dirty = true;
         }
 
         private void OnGUI()
@@ -220,23 +341,37 @@ namespace SpiritOfTheSamuraiUltrawide
             GameUiTheme.Panel(panel);
             GUI.Label(new Rect(panel.x + 50, panel.y + 30, panel.width - 100, 48), "Mod settings", heading_style);
             GUI.Label(new Rect(panel.x + 50, panel.y + 80, panel.width - 100, 30), "THE SPIRIT OF THE SAMURAI", help_style);
-            for (int row = 0; row < 10; row++)
+            float tab_width = (panel.width - 100) / 3;
+            for (int tab = 0; tab < 3; tab++)
             {
-                float row_y = panel.y + 132 + row * 64;
-                bool numeric = row == 1 || row == 3 || row == 4;
+                if (GameUiTheme.Button(new Rect(panel.x + 50 + tab * tab_width, panel.y + 122, tab_width - 8, 42), page_names[tab], small_button_style, page == tab))
+                    ChangePage(tab - page);
+            }
+            if (confirm_clear_until != 0 && Time.unscaledTime >= confirm_clear_until) { confirm_clear_until = 0; labels_dirty = true; }
+            if (labels_dirty)
+            {
+                for (int index = 0; index < labels.Length; index++) labels[index] = Label(index);
+                labels_dirty = false;
+            }
+            int[] rows = page_rows[page];
+            for (int index = 0; index < rows.Length; index++)
+            {
+                int row = rows[index];
+                float row_y = panel.y + 180 + index * 56;
+                bool numeric = IsNumeric(row);
                 float row_width = panel.width - 100 - (numeric ? 120 : 0);
-                if (GameUiTheme.Button(new Rect(panel.x + 50, row_y, row_width, 56), Label(row), row_style, row == selected))
+                if (GameUiTheme.Button(new Rect(panel.x + 50, row_y, row_width, 50), labels[row], row_style, index == selected))
                 {
-                    selected = row;
+                    selected = index;
                     Change(row, 1);
                 }
                 if (numeric)
                 {
-                    if (GameUiTheme.Button(new Rect(panel.xMax - 165, row_y, 55, 56), "-", small_button_style)) { selected = row; Change(row, -1); }
-                    if (GameUiTheme.Button(new Rect(panel.xMax - 105, row_y, 55, 56), "+", small_button_style)) { selected = row; Change(row, 1); }
+                    if (GameUiTheme.Button(new Rect(panel.xMax - 165, row_y, 55, 50), "-", small_button_style)) { selected = index; Change(row, -1); }
+                    if (GameUiTheme.Button(new Rect(panel.xMax - 105, row_y, 55, 50), "+", small_button_style)) { selected = index; Change(row, 1); }
                 }
             }
-            GUI.Label(new Rect(panel.x + 50, panel.yMax - 116, panel.width - 100, 28), "Settings save automatically. Hold Select/Back + RB for dialogue history.", help_style);
+            GUI.Label(new Rect(panel.x + 50, panel.yMax - 116, panel.width - 100, 28), "LB / RB or Tab: change page. Hold D-pad / arrows to repeat. Settings save automatically.", help_style);
             GameUiTheme.Rule(new Rect(panel.x + 50, panel.yMax - 85, panel.width - 100, 1));
             float hint_y = panel.yMax - 65;
             GameUiTheme.Hint(new Rect(panel.x + 50, hint_y, 300, 35), "XB1_DPadUp", "↑", "Navigate / adjust", help_style);
@@ -281,8 +416,15 @@ namespace SpiritOfTheSamuraiUltrawide
             }
             ModMenu.Tick();
             DialogueAdvance.Tick();
+            PlayerLight.Tick();
         }
 
         private void OnDisable() => ModMenu.Shutdown();
+        private void OnApplicationQuit()
+        {
+            DialogueHistory.Flush();
+            ModMenu.FlushConfig();
+            PlayerLight.Restore();
+        }
     }
 }

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using BepInEx.Configuration;
 using HarmonyLib;
 using PixelCrushers.DialogueSystem;
@@ -45,6 +46,9 @@ namespace SpiritOfTheSamuraiUltrawide
         private static AudioSource voice;
         private static float voice_ended_at;
         private static DialogueHistory.Entry history_entry;
+        private static readonly List<AudioSource> source_buffer = new List<AudioSource>();
+        private static readonly Transform[] voice_roots = new Transform[3];
+        private static StandardUISubtitlePanel[] subtitle_panels;
 
         internal static void Init(ConfigFile config)
         {
@@ -63,7 +67,13 @@ namespace SpiritOfTheSamuraiUltrawide
         }
 
         // The Dialogue System object is created per scene; find it after a load and once in a while after that.
-        internal static void SceneLoaded() => Hook();
+        internal static void SceneLoaded()
+        {
+            line = null;
+            voice = null;
+            subtitle_panels = null;
+            Hook();
+        }
 
         internal static void Tick()
         {
@@ -148,9 +158,15 @@ namespace SpiritOfTheSamuraiUltrawide
             if (ModMenu.InputBlocked || auto_advance.Value || !DialogueManager.hasInstance || !DialogueManager.isConversationActive) return;
             if (Time.unscaledTime - last_advance < 0.25f) return;
             // A visible continue button takes the game's own accept input; calling Continue as well would skip two lines.
-            foreach (StandardUISubtitlePanel panel in Resources.FindObjectsOfTypeAll<StandardUISubtitlePanel>())
+            if (subtitle_panels == null)
             {
-                if (panel.continueButton != null && panel.continueButton.gameObject.activeInHierarchy) return;
+                StandardDialogueUI ui = DialogueManager.instance.standardDialogueUI;
+                if (ui == null) return;
+                subtitle_panels = ui.GetComponentsInChildren<StandardUISubtitlePanel>(true);
+            }
+            foreach (StandardUISubtitlePanel panel in subtitle_panels)
+            {
+                if (panel != null && panel.continueButton != null && panel.continueButton.gameObject.activeInHierarchy) return;
             }
             Continue();
         }
@@ -162,16 +178,15 @@ namespace SpiritOfTheSamuraiUltrawide
             AudioSource best = null;
             bool best_named = false;
             string sequence = line.sequence ?? string.Empty;
-            var roots = new[]
-            {
-                line.speakerInfo != null ? line.speakerInfo.transform : null,
-                line.listenerInfo != null ? line.listenerInfo.transform : null,
-                DialogueManager.instance.transform,
-            };
-            foreach (Transform root in roots)
+            voice_roots[0] = line.speakerInfo != null ? line.speakerInfo.transform : null;
+            voice_roots[1] = line.listenerInfo != null ? line.listenerInfo.transform : null;
+            voice_roots[2] = DialogueManager.instance.transform;
+            foreach (Transform root in voice_roots)
             {
                 if (root == null) continue;
-                foreach (AudioSource source in root.GetComponentsInChildren<AudioSource>())
+                source_buffer.Clear();
+                root.GetComponentsInChildren(false, source_buffer);
+                foreach (AudioSource source in source_buffer)
                 {
                     if (!source.isPlaying || source.clip == null || source.loop) continue;
                     bool named = sequence.Contains(source.clip.name);
@@ -182,6 +197,7 @@ namespace SpiritOfTheSamuraiUltrawide
                     }
                 }
             }
+            source_buffer.Clear();
             return best;
         }
 
@@ -200,7 +216,7 @@ namespace SpiritOfTheSamuraiUltrawide
                     if (!scan_logged)
                     {
                         scan_logged = true;
-                        Plugin.Log.LogInfo($"[dialogue] no voice clip found for the line (sequence '{line.sequence}').");
+                        if (Plugin.EnableSceneInventory.Value) Plugin.Log.LogInfo($"[dialogue] no voice clip found for the line (sequence '{line.sequence}').");
                     }
                     return;
                 }
@@ -210,7 +226,7 @@ namespace SpiritOfTheSamuraiUltrawide
                 if (voice != null)
                 {
                     DialogueHistory.CaptureVoice(history_entry, voice);
-                    Plugin.Log.LogInfo($"[dialogue] voice '{voice.clip.name}' ({voice.clip.length:0.0}s) on '{Plugin.GetPath(voice.transform)}', sequence '{line.sequence}'.");
+                    if (Plugin.EnableSceneInventory.Value) Plugin.Log.LogInfo($"[dialogue] voice '{voice.clip.name}' ({voice.clip.length:0.0}s) on '{Plugin.GetPath(voice.transform)}', sequence '{line.sequence}'.");
                 }
                 return;
             }
@@ -225,7 +241,7 @@ namespace SpiritOfTheSamuraiUltrawide
             }
             else if (now - voice_ended_at >= voice_end_delay.Value)
             {
-                Plugin.Log.LogInfo("[dialogue] voice finished, advancing.");
+                if (Plugin.EnableSceneInventory.Value) Plugin.Log.LogInfo("[dialogue] voice finished, advancing.");
                 Continue();
             }
         }
@@ -237,6 +253,7 @@ namespace SpiritOfTheSamuraiUltrawide
         {
             DialogueHistory.StopReplay();
             history_entry = DialogueHistory.Record(subtitle);
+            subtitle_panels = null;
             line = subtitle;
             line_start = Time.unscaledTime;
             next_scan = 0f;

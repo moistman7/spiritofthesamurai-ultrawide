@@ -29,7 +29,7 @@ and fixes the things that break once the view is wider. Includes experimental St
 1. Close the game and install BepInEx 5 x64 into the game folder (where `samurai.exe` is).
 2. Copy `SpiritOfTheSamuraiUltrawide.dll` to `BepInEx/plugins/` (replace any older version).
 3. Launch the game. `BepInEx/LogOutput.log` should contain
-   `Loading [Spirit of the Samurai Ultrawide 1.10.0]`.
+   `Loading [Spirit of the Samurai Ultrawide 1.11.0]`.
 
 To uninstall, delete the DLL.
 
@@ -77,20 +77,37 @@ fixes are always on. Available options:
 | `Dialogue.AdvanceOnVoiceEnd` | `true` | In automatic mode, advance a voiced line shortly after its voice clip ends. |
 | `Dialogue.VoiceEndDelay` | `0.4` | Seconds to wait after the voice clip ends before advancing. |
 | `History.Key` | `F10` | Open and close dialogue history (Esc also closes it). Up/Down selects a line; Page Up/Down, Home/End and the mouse wheel scroll. Click Replay or press Enter to replay a voiced line; Stop ends playback. Closing history or starting a new line stops replay. |
-| `History.MaxLines` | `300` | How many dialogue lines the history keeps for the session. |
+| `History.MaxLines` | `300` | How many dialogue lines to keep (10–2000); oldest lines are dropped. |
+| `History.SaveHistory` | `true` | Keep dialogue history between game sessions in `BepInEx/config/SpiritOfTheSamurai-dialogue-history.json`. |
+| `History.TextSize` | `24` | History dialogue text size at 1080p (18–40); scales with display height. |
 | `Dialogue.ToggleKey` | `F6` | Switch between automatic and manual advance. |
 | `Dialogue.AdvanceKey` | `Space` | Continue to the next line in manual mode (ignored when the dialogue box shows its own continue button). |
 | `Menu.Key` | `F1` | Open or close mod settings. Changes save automatically. |
-| `Controller.EnableShortcuts` | `true` | Hold Select/Back and press LB for mod settings, RB for history, or Y for automatic/manual dialogue. Button names use Xbox positions. |
+| `Controller.EnableShortcuts` | `true` | Enable configurable mod controller shortcuts. Button names use Xbox positions. |
+| `Controller.Modifier` | `Select` | Hold this button for shortcuts; `None` allows single-button shortcuts. |
+| `Controller.MenuButton` | `LeftShoulder` | Mod settings shortcut, combined with Modifier. |
+| `Controller.HistoryButton` | `RightShoulder` | History shortcut, combined with Modifier. |
+| `Controller.AutoButton` | `North` | Automatic/manual dialogue shortcut (Y), combined with Modifier. |
+| `Controller.LightButton` | `West` | Existing player-light shortcut (X), combined with Modifier. |
+| `Controller.RepeatDelay` | `0.35` | Delay before held D-pad/arrow navigation repeats, in seconds. |
+| `Controller.RepeatInterval` | `0.09` | Seconds between held navigation steps. |
+| `PlayerLight.Enabled` | `true` | Preserve the game's existing player lights; `false` suppresses direct child 2D lights on playable SamuraiController objects. Adds no light and does not change scenery lights. |
+| `PlayerLight.ToggleKey` | `F4` | Toggle existing player lights; `None` disables the keyboard shortcut. |
 | `Diagnostics.EnableSceneInventory` | `false` | Write a scene dump to `BepInEx/diagnostics` automatically (for bug reports). F9 writes one on demand. |
 
 History and mod settings reuse loaded game panel art, menu button frames, the menu font and Xbox button icons.
 Assets are found at runtime; no game assets are included with the plugin. Scenes without these assets use a fallback.
 Voiced history entries store the voice asset path from their dialogue sequence and reload it on demand, allowing
-older lines to replay after the original clip has unloaded. History remains session-only.
+older lines to replay after the original clip has unloaded. Text and voice asset paths are saved by default;
+audio files are not copied. Saved history is shared across save slots and stays local. Disable SaveHistory to
+stop saving/loading without deleting the existing file. Clear dialogue history in the menu requires a second
+press to confirm and removes both saved contents and the recovery copy. Corrupt history files are preserved
+if neither the primary nor recovery file can load; clear history explicitly to start fresh.
 
-The mod menu offers dialogue timing, voice-end advance, history capacity, intro skipping, resolution capping,
-and controller shortcuts. Use Up/Down to select and Left/Right to adjust, or click a row and its +/− buttons.
+The mod menu has Dialogue, Display and Controller pages. LB/RB or Tab changes page; mouse tabs also work.
+Use Up/Down to select and Left/Right to adjust, or click a row and its +/− buttons. Hold the D-pad or arrow
+keys to repeat navigation and numeric changes. Controller shortcut buttons cycle through available choices;
+None disables a shortcut. The menu avoids assigning duplicate buttons when cycling bindings.
 Enter or controller A activates; Escape or B closes. Intro skipping applies on the next launch; the resolution
 cap applies the next time the game sets its resolution.
 
@@ -98,7 +115,14 @@ In history, controller D-pad Up/Down selects a line, A replays/stops its capture
 and B closes. Enter also replays the selected line. Manual dialogue advance uses the game's own controller
 continue button. History and mod settings suspend enabled Input System actions and pause game time while open,
 then restore the prior time scale and cursor state after closing and releasing buttons. Voice audio can continue
-while game time is paused. Controller input isolation and shortcuts are not yet verified in game.
+while game time is paused. The current development changes were confirmed working by the user on Windows;
+other controllers and platforms still need testing.
+
+To reduce frame-time spikes, history layout is cached, built at up to 32 lines per frame and draws only visible
+rows. Config/history writes are debounced and performed by background workers. Input actions are suspended
+on overlay entry or when newly enabled rather than enumerated each frame. Voice scans reuse buffers, and
+per-line voice logging runs only with Diagnostics.EnableSceneInventory enabled. These changes have not yet
+been benchmarked in game.
 
 ## Known limitations
 
@@ -112,6 +136,8 @@ If something looks wrong, press F9, then attach `BepInEx/LogOutput.log` and the 
 `BepInEx/diagnostics` to a bug report. These files stay local; nothing is transmitted.
 
 ## Build
+
+Logic/storage checks (no game required, .NET 10 SDK): `dotnet run --project tests/Logic.Tests -c Release`.
 
 Needs the .NET SDK, the game, and BepInEx 5 installed (the project references their DLLs).
 

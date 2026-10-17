@@ -10,6 +10,10 @@ namespace SpiritOfTheSamuraiUltrawide
         internal static readonly Color Ink = new Color(1f, 0.902f, 0.843f);
         internal static readonly Color Gold = new Color(0.961f, 0.616f, 0.141f);
         private static readonly Dictionary<string, Sprite> sprites = new Dictionary<string, Sprite>();
+        private static readonly HashSet<string> wanted = new HashSet<string> { "MapInfoPanelBox", "fondo_tuto", "menuFrame", "menuFrame_hightlighted", "menuFrame_Clicked", "XB1_A", "XB1_B", "XB1_DPadUp" };
+        private static readonly List<Image> images = new List<Image>();
+        private static readonly List<Text> texts = new List<Text>();
+        private static readonly float[] dx = new float[4], dy = new float[4], sx = new float[4], sy = new float[4];
         private static Font font;
         private static bool scanned;
         internal static int Revision { get; private set; }
@@ -26,16 +30,28 @@ namespace SpiritOfTheSamuraiUltrawide
         {
             if (scanned) return;
             scanned = true;
-            foreach (Sprite sprite in Resources.FindObjectsOfTypeAll<Sprite>())
+            images.Clear();
+            texts.Clear();
+            // UI assets are already referenced by scene Images; don't pin every loaded game sprite.
+            foreach (GameObject root in UnityEngine.SceneManagement.SceneManager.GetActiveScene().GetRootGameObjects())
             {
-                if (sprite == null || sprite.texture == null) continue;
-                // Rotated atlas sprites need a mesh renderer; prefer the game's unpacked UI assets.
-                if (sprite.packed && sprite.packingRotation != SpritePackingRotation.None) continue;
-                sprites[sprite.name] = sprite;
-                if (!sprites.ContainsKey(sprite.texture.name)) sprites[sprite.texture.name] = sprite;
+                if (root.name != "UI" && root.name != "Canvas") continue;
+                root.GetComponentsInChildren(true, images);
+                foreach (Image image in images)
+                {
+                    Keep(image.sprite);
+                    var button = image.GetComponent<UnityEngine.UI.Selectable>();
+                    if (button != null)
+                    {
+                        Keep(button.spriteState.highlightedSprite);
+                        Keep(button.spriteState.pressedSprite);
+                    }
+                }
+                root.GetComponentsInChildren(true, texts);
+                if (root.name == "UI") break;
             }
             int best = -1;
-            foreach (Text text in Resources.FindObjectsOfTypeAll<Text>())
+            foreach (Text text in texts)
             {
                 if (text.font == null || !text.gameObject.scene.IsValid()) continue;
                 string path = Plugin.GetPath(text.transform);
@@ -44,15 +60,26 @@ namespace SpiritOfTheSamuraiUltrawide
                 if (score <= best) continue;
                 best = score;
                 font = text.font;
+                if (score == 100) break;
             }
+            images.Clear(); texts.Clear();
             ++Revision;
             Plugin.Log.LogInfo($"[ui] game assets: font='{font?.name ?? "fallback"}', panel='{Find("MapInfoPanelBox", "fondo_tuto")?.name ?? "fallback"}', buttons='{Find("menuFrame")?.name ?? "fallback"}'.");
         }
 
-        private static Sprite Find(params string[] names)
+        private static void Keep(Sprite sprite)
         {
-            foreach (string name in names)
-                if (sprites.TryGetValue(name, out Sprite sprite) && sprite != null) return sprite;
+            if (sprite == null || sprite.texture == null) return;
+            if (sprite.packed && sprite.packingRotation != SpritePackingRotation.None) return;
+            if (wanted.Contains(sprite.name)) sprites[sprite.name] = sprite;
+            if (wanted.Contains(sprite.texture.name) && !sprites.ContainsKey(sprite.texture.name)) sprites[sprite.texture.name] = sprite;
+        }
+
+        private static Sprite Find(string first, string second = null, string third = null)
+        {
+            if (sprites.TryGetValue(first, out Sprite sprite) && sprite != null) return sprite;
+            if (second != null && sprites.TryGetValue(second, out sprite) && sprite != null) return sprite;
+            if (third != null && sprites.TryGetValue(third, out sprite) && sprite != null) return sprite;
             return null;
         }
 
@@ -170,10 +197,10 @@ namespace SpiritOfTheSamuraiUltrawide
                 float right = Mathf.Min(border.z, rect.width / 3);
                 float top = Mathf.Min(border.w, rect.height / 3);
                 float bottom = Mathf.Min(border.y, rect.height / 3);
-                float[] dx = { rect.x, rect.x + left, rect.xMax - right, rect.xMax };
-                float[] dy = { rect.y, rect.y + top, rect.yMax - bottom, rect.yMax };
-                float[] sx = { source.x, source.x + border.x, source.xMax - border.z, source.xMax };
-                float[] sy = { source.yMax, source.yMax - border.w, source.y + border.y, source.y };
+                dx[0] = rect.x; dx[1] = rect.x + left; dx[2] = rect.xMax - right; dx[3] = rect.xMax;
+                dy[0] = rect.y; dy[1] = rect.y + top; dy[2] = rect.yMax - bottom; dy[3] = rect.yMax;
+                sx[0] = source.x; sx[1] = source.x + border.x; sx[2] = source.xMax - border.z; sx[3] = source.xMax;
+                sy[0] = source.yMax; sy[1] = source.yMax - border.w; sy[2] = source.y + border.y; sy[3] = source.y;
                 for (int y = 0; y < 3; y++)
                     for (int x = 0; x < 3; x++)
                         GUI.DrawTextureWithTexCoords(new Rect(dx[x], dy[y], dx[x + 1] - dx[x], dy[y + 1] - dy[y]), texture,

@@ -1,5 +1,7 @@
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
+using System.IO;
+using System.Threading.Tasks;
 using BepInEx.Configuration;
 using PixelCrushers.DialogueSystem;
 using UnityEngine;
@@ -20,12 +22,47 @@ namespace SpiritOfTheSamuraiUltrawide
             public UnityEngine.Audio.AudioMixerGroup Mixer;
             public float Volume = 1f;
             public float Pitch = 1f;
+            internal GUIContent Content;
         }
 
         internal static readonly List<Entry> Entries = new List<Entry>();
 
         private static ConfigEntry<KeyCode> key;
         private static ConfigEntry<int> max_lines;
+        private static ConfigEntry<bool> save_history;
+        private static ConfigEntry<int> text_size;
+        private static string save_path;
+        private static Task<HistoryStore.Document> load_task;
+        private static Task save_task;
+        private static int saved_revision;
+        private static int data_revision;
+        private static float save_after;
+        private static bool clear_backup;
+        private static bool save_clears_backup;
+        private static bool load_failed;
+        private static bool loaded_once;
+        internal static int Revision { get; private set; }
+        internal static int TextSize { get => text_size.Value; set => text_size.Value = Mathf.Clamp(value, 18, 40); }
+        internal static bool SaveHistory
+        {
+            get => save_history.Value;
+            set
+            {
+                save_history.Value = value;
+                if (value)
+                {
+                    if (!loaded_once && load_task == null) StartLoading();
+                    Changed();
+                }
+            }
+        }
+
+        private static void Changed()
+        {
+            ++Revision;
+            ++data_revision;
+            save_after = Time.unscaledTime + 2f;
+        }
         private static HistoryWindow window;
         private static readonly Regex audio_command = new Regex(@"\bAudio(?:Wait|WaitOnce)?\s*\(\s*([^,)]+)", RegexOptions.IgnoreCase);
 
@@ -38,6 +75,7 @@ namespace SpiritOfTheSamuraiUltrawide
                 max_lines.Value = Mathf.Clamp(value, 10, 2000);
                 int excess = Entries.Count - max_lines.Value;
                 if (excess > 0) Entries.RemoveRange(0, excess);
+                Changed();
             }
         }
 
@@ -46,7 +84,18 @@ namespace SpiritOfTheSamuraiUltrawide
             key = config.Bind("History", "Key", KeyCode.F10,
                 "Key that opens and closes the dialogue history window. Set to None to disable.");
             max_lines = config.Bind("History", "MaxLines", 300,
-                "How many dialogue lines to keep. Older lines are dropped.");
+                new ConfigDescription("How many dialogue lines to keep. Older lines are dropped.", new AcceptableValueRange<int>(10, 2000)));
+            save_history = config.Bind("History", "SaveHistory", true, "Keep dialogue history between game sessions. Disabling preserves the existing file but stops loading/saving it. Clear history removes its saved contents.");
+            text_size = config.Bind("History", "TextSize", 24, new ConfigDescription("History dialogue font size at 1080p; scales with display height.", new AcceptableValueRange<int>(18, 40)));
+            save_path = Path.Combine(BepInEx.Paths.ConfigPath, "SpiritOfTheSamurai-dialogue-history.json");
+            if (SaveHistory) StartLoading();
+        }
+
+        private static void StartLoading()
+        {
+            int limit = Mathf.Clamp(max_lines.Value, 10, 2000);
+            loaded_once = true;
+            load_task = Task.Run(() => HistoryStore.Read(save_path, limit));
         }
 
         internal static Entry Record(Subtitle subtitle)
@@ -68,16 +117,21 @@ namespace SpiritOfTheSamuraiUltrawide
             Entries.Add(entry);
             int excess = Entries.Count - Mathf.Max(10, max_lines.Value);
             if (excess > 0) Entries.RemoveRange(0, excess);
+            Changed();
             return entry;
         }
 
         internal static void CaptureVoice(Entry entry, AudioSource source)
         {
             if (entry == null || source == null || source.clip == null) return;
+            bool was_replayable = entry.CanReplay;
             entry.Voice = source.clip;
             entry.Mixer = source.outputAudioMixerGroup;
             entry.Volume = source.volume;
             entry.Pitch = source.pitch;
+            if (!was_replayable) ++Revision;
+            ++data_revision;
+            save_after = Time.unscaledTime + 2f;
         }
 
         internal static void StopReplay()
@@ -87,10 +141,92 @@ namespace SpiritOfTheSamuraiUltrawide
 
         internal static void Tick()
         {
+            PollStorage();
             if (key.Value != KeyCode.None && Input.GetKeyDown(key.Value)) Toggle();
             else if (IsOpen && (Input.GetKeyDown(KeyCode.Escape) ||
                 (ModMenu.Pad != null && ModMenu.Pad.buttonEast.wasPressedThisFrame))) Close();
-            ModMenu.SyncInput();
+        }
+
+        private static HistoryStore.Document Snapshot()
+        {
+            var result = new HistoryStore.Document();
+            foreach (Entry entry in Entries) result.Lines.Add(new HistoryStore.Line { Speaker = entry.Speaker, Text = entry.Text,
+                VoicePath = entry.VoicePath, Volume = entry.Volume, Pitch = entry.Pitch });
+            return result;
+        }
+
+        private static void PollStorage()
+        {
+            if (load_task != null && load_task.IsCompleted)
+            {
+                if (load_task.IsFaulted)
+                {
+                    load_failed = true;
+                    Plugin.Log.LogWarning($"[history] saved history was not loaded; preserving the file: {load_task.Exception.GetBaseException().Message}");
+                }
+                else if (SaveHistory)
+                {
+                    var previous = new List<Entry>();
+                    foreach (var line in load_task.Result.Lines) previous.Add(new Entry { Speaker = line.Speaker ?? "", Text = line.Text,
+                        VoicePath = line.VoicePath, Volume = line.Volume, Pitch = line.Pitch });
+                    Entries.InsertRange(0, previous);
+                    int excess = Entries.Count - Mathf.Clamp(max_lines.Value, 10, 2000);
+                    if (excess > 0) Entries.RemoveRange(0, excess);
+                    ++Revision;
+                    Plugin.Log.LogInfo($"[history] loaded {previous.Count} saved lines.");
+                }
+                else loaded_once = false;
+                load_task = null;
+            }
+            if (save_task != null && save_task.IsCompleted)
+            {
+                if (save_task.IsFaulted)
+                {
+                    Plugin.Log.LogWarning($"[history] could not save history: {save_task.Exception.GetBaseException().Message}");
+                    saved_revision = -1;
+                    clear_backup |= save_clears_backup;
+                    save_after = Time.unscaledTime + 10f;
+                }
+                save_task = null;
+            }
+            if (save_task == null && load_task == null && !load_failed && (SaveHistory || clear_backup) &&
+                saved_revision != data_revision && Time.unscaledTime >= save_after) QueueSave();
+        }
+
+        private static void QueueSave()
+        {
+            var snapshot = SaveHistory ? Snapshot() : new HistoryStore.Document();
+            bool clear = clear_backup;
+            save_clears_backup = clear;
+            saved_revision = data_revision;
+            clear_backup = false;
+            Task previous = save_task;
+            save_task = Task.Run(async () =>
+            {
+                if (previous != null) { try { await previous.ConfigureAwait(false); } catch { } }
+                HistoryStore.Write(save_path, snapshot, clear);
+            });
+        }
+
+        internal static void Clear()
+        {
+            StopReplay();
+            load_task = null; // A pending read must never repopulate a cleared list.
+            load_failed = false;
+            loaded_once = true;
+            Entries.Clear();
+            Changed();
+            clear_backup = true;
+            save_after = 0;
+        }
+
+        internal static void Flush()
+        {
+            try { load_task?.Wait(2000); } catch { } // Only block at application exit, never during a game frame.
+            PollStorage();
+            if (load_task == null && !load_failed && (SaveHistory || clear_backup) && saved_revision != data_revision) QueueSave();
+            try { save_task?.Wait(2000); }
+            catch (System.Exception e) { Plugin.Log.LogWarning($"[history] final save failed: {e.GetBaseException().Message}"); }
         }
 
         internal static void Close()
@@ -135,12 +271,22 @@ namespace SpiritOfTheSamuraiUltrawide
         private AudioClip loaded_voice;
         private DialogueSystemController loaded_by;
         private string replay_status;
+        private RepeatGate line_repeat, page_repeat;
+        private readonly List<float> row_tops = new List<float> { 0 };
+        private readonly List<float> text_heights = new List<float>();
+        private EntryLayoutKey layout_key;
+        private float layout_width = -1;
+        private int layout_revision = -1, layout_frame = -1, style_text_size = -1;
+        private string summary;
+        private sealed class EntryLayoutKey { internal DialogueHistory.Entry First; }
 
         internal void SelectLast()
         {
             selected = Mathf.Max(0, DialogueHistory.Entries.Count - 1);
             ScrollToEnd();
             reveal_selection = true;
+            line_repeat = default;
+            page_repeat = default;
         }
 
         internal void StopReplay()
@@ -231,7 +377,7 @@ namespace SpiritOfTheSamuraiUltrawide
             var pad = ModMenu.Pad;
             if (!loading && playing != null && replay != null && !replay.isPlaying) StopReplay();
             selected = Mathf.Clamp(selected, 0, Mathf.Max(0, DialogueHistory.Entries.Count - 1));
-            int direction = ModMenu.Direction(KeyCode.UpArrow, KeyCode.DownArrow, pad?.dpad.up, pad?.dpad.down);
+            int direction = ControllerInput.Repeat(ref line_repeat, KeyCode.UpArrow, KeyCode.DownArrow, pad?.dpad.up, pad?.dpad.down);
             if (direction != 0)
             {
                 selected = Mathf.Clamp(selected + direction, 0, Mathf.Max(0, DialogueHistory.Entries.Count - 1));
@@ -247,12 +393,12 @@ namespace SpiritOfTheSamuraiUltrawide
                 }
             }
             float step = 0f;
-            if (Input.GetKeyDown(KeyCode.PageUp)) step = -400f;
-            else if (Input.GetKeyDown(KeyCode.PageDown)) step = 400f;
-            else if (Input.GetKeyDown(KeyCode.Home)) scroll.y = 0f;
+            bool modifier = pad != null && ControllerInput.Modifier.Value != PadButton.None && ControllerInput.ModifierHeld(pad);
+            int page_step = ControllerInput.Repeat(ref page_repeat, KeyCode.PageUp, KeyCode.PageDown,
+                modifier ? null : pad?.leftShoulder, modifier ? null : pad?.rightShoulder);
+            step = page_step * 400;
+            if (Input.GetKeyDown(KeyCode.Home)) scroll.y = 0f;
             else if (Input.GetKeyDown(KeyCode.End)) ScrollToEnd();
-            if (pad != null && !pad.selectButton.isPressed && pad.leftShoulder.wasPressedThisFrame) step = -400f;
-            else if (pad != null && !pad.selectButton.isPressed && pad.rightShoulder.wasPressedThisFrame) step = 400f;
             scroll.y = Mathf.Max(0f, scroll.y + step);
         }
 
@@ -260,17 +406,53 @@ namespace SpiritOfTheSamuraiUltrawide
         {
             title_style = GameUiTheme.TextStyle(36, GameUiTheme.Gold, true);
             speaker_style = GameUiTheme.TextStyle(22, GameUiTheme.Gold, true);
-            text_style = GameUiTheme.TextStyle(24, GameUiTheme.Ink, false, true);
+            text_style = GameUiTheme.TextStyle(DialogueHistory.TextSize, GameUiTheme.Ink, false, true);
             help_style = GameUiTheme.TextStyle(19, GameUiTheme.Ink);
             button_style = GameUiTheme.ButtonStyle(21);
             theme_revision = GameUiTheme.Revision;
+            style_text_size = DialogueHistory.TextSize;
+            layout_width = -1;
+        }
+
+        private void BuildLayout(float width)
+        {
+            var entries = DialogueHistory.Entries;
+            bool changed = layout_revision != DialogueHistory.Revision;
+            if (layout_width != width || (changed && (entries.Count < text_heights.Count || layout_key == null ||
+                entries.Count == 0 || layout_key.First != entries[0])))
+            {
+                row_tops.Clear(); row_tops.Add(0);
+                text_heights.Clear();
+                layout_key = new EntryLayoutKey { First = entries.Count > 0 ? entries[0] : null };
+                layout_width = width;
+                layout_frame = -1;
+            }
+            if (changed)
+            {
+                layout_revision = DialogueHistory.Revision;
+                int voiced = 0;
+                foreach (var entry in entries) if (entry.CanReplay) voiced++;
+                summary = $"{entries.Count} lines   /   {voiced} voiced lines";
+            }
+            if (layout_frame == Time.frameCount) return;
+            layout_frame = Time.frameCount;
+            // Amortize large restored histories instead of measuring 2,000 strings in the opening frame.
+            int end = Mathf.Min(entries.Count, text_heights.Count + 32);
+            while (text_heights.Count < end)
+            {
+                var entry = entries[text_heights.Count];
+                if (entry.Content == null) entry.Content = new GUIContent(entry.Text);
+                float height = text_style.CalcHeight(entry.Content, width);
+                text_heights.Add(height);
+                row_tops.Add(row_tops[row_tops.Count - 1] + height + 76);
+            }
         }
 
         private void OnGUI()
         {
             ModMenu.ConsumeNavigationEvent();
             GameUiTheme.Discover();
-            if (title_style == null || theme_revision != GameUiTheme.Revision) CreateStyles();
+            if (title_style == null || theme_revision != GameUiTheme.Revision || style_text_size != DialogueHistory.TextSize) CreateStyles();
             Matrix4x4 previous_matrix = GUI.matrix;
             int previous_depth = GUI.depth;
             float scale = Mathf.Max(0.1f, Screen.height / DesignHeight);
@@ -284,22 +466,22 @@ namespace SpiritOfTheSamuraiUltrawide
             GameUiTheme.Panel(panel);
             GUI.Label(new Rect(panel.x + 50f, panel.y + 28f, panel.width - 240f, 50f), "Dialogue history", title_style);
             if (GameUiTheme.Button(new Rect(panel.xMax - 160f, panel.y + 35f, 110f, 40f), "Close", button_style)) DialogueHistory.Close();
-            int replayable = 0;
-            foreach (var entry in DialogueHistory.Entries) if (entry.CanReplay) ++replayable;
-            GUI.Label(new Rect(panel.x + 50f, panel.y + 80f, panel.width - 100f, 28f), $"{DialogueHistory.Entries.Count} lines   /   {replayable} voiced lines", help_style);
             GameUiTheme.Rule(new Rect(panel.x + 50, panel.y + 115, panel.width - 100, 1));
             var view = new Rect(panel.x + 50f, panel.y + 130f, panel.width - 100f, panel.height - 220f);
             float content_width = view.width - 24f;
             float text_width = content_width - 40f;
-            float total_height = 0f;
-            foreach (var entry in DialogueHistory.Entries) total_height += 76f + text_style.CalcHeight(new GUIContent(entry.Text), text_width);
+            BuildLayout(text_width);
+            GUI.Label(new Rect(panel.x + 50f, panel.y + 80f, panel.width - 100f, 28f), summary ?? "", help_style);
+            float total_height = row_tops[row_tops.Count - 1];
             scroll = GUI.BeginScrollView(view, scroll, new Rect(0, 0, content_width, Mathf.Max(view.height, total_height)));
-            float y = 0f;
             Rect selection = new Rect();
-            for (int index = 0; index < DialogueHistory.Entries.Count; index++)
+            if (selected < text_heights.Count) selection = new Rect(0, row_tops[selected], content_width, text_heights[selected] + 66);
+            int first = ModLogic.FirstVisible(row_tops, scroll.y);
+            for (int index = first; index < text_heights.Count && row_tops[index] < scroll.y + view.height; index++)
             {
                 DialogueHistory.Entry entry = DialogueHistory.Entries[index];
-                float text_height = text_style.CalcHeight(new GUIContent(entry.Text), text_width);
+                float y = row_tops[index];
+                float text_height = text_heights[index];
                 var card = new Rect(0, y, content_width, text_height + 66f);
                 if (index == selected)
                 {
@@ -322,11 +504,10 @@ namespace SpiritOfTheSamuraiUltrawide
                 GUI.Label(new Rect(20, y + 45, text_width, text_height), entry.Text, text_style);
                 GameUiTheme.Rule(new Rect(20, card.yMax + 4, content_width - 40, 1));
                 if (Event.current.type == EventType.MouseDown && Event.current.button == 0 && card.Contains(Event.current.mousePosition)) selected = index;
-                y += text_height + 76f;
             }
             if (DialogueHistory.Entries.Count == 0) GUI.Label(new Rect(20, 24, text_width, 80), "Your conversations will appear here.", text_style);
             GUI.EndScrollView();
-            if (reveal_selection && Event.current.type == EventType.Repaint)
+            if (reveal_selection && selected < text_heights.Count && Event.current.type == EventType.Repaint)
             {
                 if (selection.yMin < scroll.y) scroll.y = selection.yMin;
                 else if (selection.yMax > scroll.y + view.height) scroll.y = selection.yMax - view.height;
@@ -337,6 +518,7 @@ namespace SpiritOfTheSamuraiUltrawide
             GameUiTheme.Hint(new Rect(panel.x + 380, footer_y, 340, 34), "XB1_A", "A", "Replay or stop  /  Enter", help_style);
             GameUiTheme.Hint(new Rect(panel.xMax - 270, footer_y, 220, 34), "XB1_B", "B", "Back  /  Esc", help_style);
             if (!string.IsNullOrEmpty(replay_status)) GUI.Label(new Rect(panel.x + 50, panel.yMax - 95, panel.width - 100, 30), replay_status, help_style);
+            else if (text_heights.Count < DialogueHistory.Entries.Count) GUI.Label(new Rect(panel.x + 50, panel.yMax - 95, panel.width - 100, 30), "Preparing history layout...", help_style);
             GUI.matrix = previous_matrix;
             GUI.depth = previous_depth;
         }
