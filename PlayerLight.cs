@@ -14,7 +14,17 @@ namespace SpiritOfTheSamuraiUltrawide
         private static ConfigEntry<KeyCode> key;
         private static float next_scan;
         private static bool suppressed;
-        internal static bool Enabled { get => enabled.Value; set => enabled.Value = value; }
+        internal static bool Enabled
+        {
+            get => enabled.Value;
+            set
+            {
+                if (enabled.Value == value) return;
+                enabled.Value = value;
+                ShortcutFeedback.Show(value ? "Player lights: game default" : "Player lights disabled",
+                    value ? "Restores the original light states for Takeshi and Chisai." : "Turns off character lights for Takeshi and Chisai, including companion Chisai.");
+            }
+        }
         internal static void Init(ConfigFile file)
         {
             enabled = file.Bind("PlayerLight", "Enabled", true, "Allow the game's existing player lights. False suppresses direct child Light2D components on Takeshi, playable Chisai, and companion Chisai; does not add a light or alter scenery/VFX.");

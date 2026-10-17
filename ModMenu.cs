@@ -135,13 +135,11 @@ namespace SpiritOfTheSamuraiUltrawide
             else if (!InputBlocked && shortcut == 3)
             {
                 DialogueAdvance.Toggle();
-                ShortcutFeedback.Show(DialogueAdvance.AutoAdvance ? "Auto dialogue enabled" : "Manual dialogue enabled");
                 consumed_frame = Time.frameCount;
             }
             else if (!InputBlocked && shortcut == 4)
             {
                 PlayerLight.Enabled = !PlayerLight.Enabled;
-                ShortcutFeedback.Show(PlayerLight.Enabled ? "Player lights: game default" : "Player lights disabled");
                 consumed_frame = Time.frameCount;
             }
             else if (IsOpen)
@@ -316,12 +314,28 @@ namespace SpiritOfTheSamuraiUltrawide
             {
                 case 0: DialogueAdvance.AutoAdvance = !DialogueAdvance.AutoAdvance; break;
                 case 1: DialogueAdvance.Speed += direction * 0.25f; break;
-                case 2: DialogueAdvance.AdvanceOnVoiceEnd = !DialogueAdvance.AdvanceOnVoiceEnd; break;
+                case 2:
+                    DialogueAdvance.AdvanceOnVoiceEnd = !DialogueAdvance.AdvanceOnVoiceEnd;
+                    ShortcutFeedback.Show(DialogueAdvance.AdvanceOnVoiceEnd ? "Advance after voice enabled" : "Advance after voice disabled",
+                        DialogueAdvance.AdvanceOnVoiceEnd ? "In auto mode, voiced lines advance after playback and your voice end delay." : "In auto mode, dialogue uses the text timer instead of voice completion.");
+                    break;
                 case 3: DialogueAdvance.VoiceEndDelay = Mathf.Round((DialogueAdvance.VoiceEndDelay + direction * 0.1f) * 10f) / 10f; break;
                 case 4: DialogueHistory.MaxLines += direction * 50; break;
-                case 5: Plugin.SkipIntros.Value = !Plugin.SkipIntros.Value; break;
-                case 6: Plugin.LimitResolutionToDisplay.Value = !Plugin.LimitResolutionToDisplay.Value; break;
-                case 7: ControllerShortcuts = !ControllerShortcuts; break;
+                case 5:
+                    Plugin.SkipIntros.Value = !Plugin.SkipIntros.Value;
+                    ShortcutFeedback.Show(Plugin.SkipIntros.Value ? "Intro logo skipping enabled" : "Intro logo skipping disabled",
+                        "Applies to startup logo videos on the next game launch.");
+                    break;
+                case 6:
+                    Plugin.LimitResolutionToDisplay.Value = !Plugin.LimitResolutionToDisplay.Value;
+                    ShortcutFeedback.Show(Plugin.LimitResolutionToDisplay.Value ? "Display resolution cap enabled" : "Display resolution cap disabled",
+                        Plugin.LimitResolutionToDisplay.Value ? "Limits resolution to your display size at the next resolution change." : "Allows resolutions above your display size at the next resolution change.");
+                    break;
+                case 7:
+                    ControllerShortcuts = !ControllerShortcuts;
+                    ShortcutFeedback.Show(ControllerShortcuts ? "Controller shortcuts enabled" : "Controller shortcuts disabled",
+                        ControllerShortcuts ? "Your configured controller shortcuts are active." : "Keyboard shortcuts still work. Controller navigation remains available in open mod panels.");
+                    break;
                 case 8: Close(); DialogueHistory.Toggle(); break;
                 case 9: Close(); break;
                 case 10: DialogueHistory.TextSize += direction * 2; break;

@@ -20,7 +20,7 @@ namespace SpiritOfTheSamuraiUltrawide
     //  - Videos are 16:9 RawImages, so the scene shows beside them instead of black bars.
     //  - Menus park their hidden pages one 16:9 screen-width off-center, which is now partly on screen.
     //  - Camera-attached backdrops and overlays (sky, vignette, damage border) are sized to the 16:9 view.
-    [BepInPlugin("renodx.spiritofthesamurai.ultrawide", "Spirit of the Samurai Ultrawide", "1.12.0")]
+    [BepInPlugin("renodx.spiritofthesamurai.ultrawide", "Spirit of the Samurai Ultrawide", "1.13.0")]
     public class Plugin : BaseUnityPlugin
     {
         private static readonly Rect FullViewport = new Rect(0f, 0f, 1f, 1f);

@@ -29,7 +29,7 @@ and fixes the things that break once the view is wider. Includes experimental St
 1. Close the game and install BepInEx 5 x64 into the game folder (where `samurai.exe` is).
 2. Copy `SpiritOfTheSamuraiUltrawide.dll` to `BepInEx/plugins/` (replace any older version).
 3. Launch the game. `BepInEx/LogOutput.log` should contain
-   `Loading [Spirit of the Samurai Ultrawide 1.12.0]`.
+   `Loading [Spirit of the Samurai Ultrawide 1.13.0]`.
 
 To uninstall, delete the DLL.
 
@@ -103,7 +103,9 @@ Clear dialogue history in the menu requires a second press to confirm and clears
 
 The player-light toggle covers Takeshi, playable Chisai, and companion Chisai. F4 or Select/Back + X
 suppresses their existing direct-child lights and restores the original states when enabled again.
-Controller auto-dialogue and player-light shortcuts show a brief fading status message without pausing gameplay.
+Feature toggles from keyboard, controller, and the mod menu show a five-second fading context window using
+the game's loaded font and panel artwork. Each window explains the new state, including settings that apply
+on the next launch or resolution change, without taking focus, dimming the screen, or pausing gameplay.
 Controller use hides the cursor in the mod overlays; mouse movement, clicks, or scrolling brings it back.
 Manual dialogue accepts Space or controller A, with a fallback if the native Continue input does not respond.
 The fallback checks the subtitle identity and start frame to avoid advancing twice.

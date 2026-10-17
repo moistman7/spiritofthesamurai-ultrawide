@@ -19,7 +19,18 @@ namespace SpiritOfTheSamuraiUltrawide
         private static ConfigEntry<KeyCode> toggle_key;
         private static ConfigEntry<KeyCode> advance_key;
 
-        internal static bool AutoAdvance { get => auto_advance.Value; set { auto_advance.Value = value; RefreshSettings(); } }
+        internal static bool AutoAdvance
+        {
+            get => auto_advance.Value;
+            set
+            {
+                if (auto_advance.Value == value) return;
+                auto_advance.Value = value;
+                RefreshSettings();
+                ShortcutFeedback.Show(value ? "Auto dialogue enabled" : "Manual dialogue enabled",
+                    value ? "Dialogue advances automatically using your speed and voice settings." : "Dialogue waits for your configured advance key or controller A.");
+            }
+        }
         internal static float Speed { get => speed.Value; set { speed.Value = Mathf.Clamp(value, 0.25f, 5f); RefreshSettings(); } }
         internal static bool AdvanceOnVoiceEnd { get => advance_on_voice_end.Value; set => advance_on_voice_end.Value = value; }
         internal static float VoiceEndDelay { get => voice_end_delay.Value; set => voice_end_delay.Value = Mathf.Clamp(value, 0f, 3f); }
@@ -143,18 +154,10 @@ namespace SpiritOfTheSamuraiUltrawide
 
         internal static void Toggle()
         {
-            auto_advance.Value = !auto_advance.Value;
+            AutoAdvance = !AutoAdvance;
             Hook();
             string message = auto_advance.Value ? "Dialogue: auto-advance on" : "Dialogue: manual advance";
             Plugin.Log.LogInfo(message);
-            try
-            {
-                if (DialogueManager.hasInstance) DialogueManager.ShowAlert(message);
-            }
-            catch (System.Exception e)
-            {
-                Plugin.Log.LogWarning($"[dialogue] could not show the toggle message: {e.Message}");
-            }
         }
 
         private static void Continue()

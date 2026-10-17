@@ -108,10 +108,11 @@ namespace SpiritOfTheSamuraiUltrawide
             return style;
         }
 
-        internal static void Panel(Rect rect)
+        internal static void Panel(Rect rect, bool dimBackground = true)
         {
             Discover();
-            Fill(new Rect(0, 0, Screen.width / Mathf.Max(0.1f, Screen.height / 1080f), 1080), new Color(0, 0, 0, 0.65f));
+            if (dimBackground)
+                Fill(new Rect(0, 0, Screen.width / Mathf.Max(0.1f, Screen.height / 1080f), 1080), new Color(0, 0, 0, 0.65f));
             Fill(rect, new Color(0.045f, 0.025f, 0.02f, 0.97f));
             Sprite panel = Find("MapInfoPanelBox", "fondo_tuto");
             if (panel != null) DrawSprite(rect, panel, Color.white, true);
@@ -128,7 +129,7 @@ namespace SpiritOfTheSamuraiUltrawide
         {
             if (Event.current.type != EventType.Repaint) return;
             Color previous = GUI.color;
-            GUI.color = color;
+            GUI.color = new Color(color.r, color.g, color.b, color.a * previous.a);
             GUI.DrawTexture(rect, Texture2D.whiteTexture);
             GUI.color = previous;
         }
@@ -179,7 +180,7 @@ namespace SpiritOfTheSamuraiUltrawide
             catch (UnityException) { return; }
             Texture2D texture = sprite.texture;
             Color previous = GUI.color;
-            GUI.color = tint;
+            GUI.color = new Color(tint.r, tint.g, tint.b, tint.a * previous.a);
             if (!sliced)
             {
                 GUI.DrawTextureWithTexCoords(rect, texture, UV(source, texture));

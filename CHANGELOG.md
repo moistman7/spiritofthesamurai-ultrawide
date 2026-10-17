@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.13.0 — 2026-10-17
+- Add five-second fading context windows using the game's loaded font and panel artwork, explaining each feature toggle and when it takes effect.
+- Unify keyboard, controller and menu feedback for auto/manual dialogue and player lights; explain voice completion, intro skipping, resolution caps and controller shortcut toggles.
+- Keep notifications non-interactive without pausing gameplay or dimming the screen; preserve panel fade alpha and disable feedback while idle.
+- Exclude packaged source under dist from plugin compilation.
 ## 1.12.0 — 2026-10-17
 - Move the lower-right arrow/incense HUD together toward the ultrawide right edge, preserving 16:9 positions, spacing, scale, and counters. Recompute only when the parent canvas width changes.
 - Center the cutscene hold-to-skip bar horizontally by converting its fixed left anchor to a center anchor; preserve its original 16:9 offset, vertical layout, and fill behavior.

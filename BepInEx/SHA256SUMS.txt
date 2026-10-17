@@ -1,1 +1,1 @@
-09d5a13017e4746f719a382e26f9e3adb8f815066e1531465866ab291975eba0  plugins/SpiritOfTheSamuraiUltrawide.dll
+4cb77043839b094a27b51e85592699659cab64a0950d26215002f8aeeb9b4e43  plugins/SpiritOfTheSamuraiUltrawide.dll
