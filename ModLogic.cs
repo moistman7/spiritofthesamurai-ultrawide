@@ -2,6 +2,23 @@ namespace SpiritOfTheSamuraiUltrawide
 {
     internal static class ModLogic
     {
+        internal static float FullscreenWidthFactor(float left, float right, float pivot, float width)
+        {
+            if (width <= 0f || pivot <= left || pivot >= right) return 1f;
+            // One pixel of overlap avoids a fractional-pixel seam along the screen edges.
+            return System.Math.Max(1f, System.Math.Max((pivot + 1f) / (pivot - left), (width + 1f - pivot) / (right - pivot)));
+        }
+        internal static int NextAvailable(bool[] available, int current, int direction)
+        {
+            if (available.Length == 0 || direction == 0) return current;
+            int candidate = current;
+            for (int attempt = 0; attempt < available.Length; attempt++)
+            {
+                candidate = (candidate + (direction < 0 ? -1 : 1) + available.Length) % available.Length;
+                if (available[candidate]) return candidate;
+            }
+            return current;
+        }
         // Native input may run before or after the mod: never advance a newly started/replaced line.
         internal static bool ShouldFallbackContinue(object requested, object current, int subtitleFrame,
             int requestFrame, bool waiting) => requested != null && ReferenceEquals(requested, current) &&

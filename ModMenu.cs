@@ -32,13 +32,22 @@ namespace SpiritOfTheSamuraiUltrawide
         private int page;
         private RepeatGate vertical_repeat, horizontal_repeat;
         private float confirm_clear_until;
-        private static readonly string[] page_names = { "Dialogue", "Display", "Controller" };
+        private float confirm_reset_until;
+        private int binding_index = -1, binding_selected;
+        private List<object> binding_options;
+        private string[] binding_labels;
+        private bool[] binding_allowed;
+        private string binding_title;
+        private int binding_revision;
+        private Vector2 binding_scroll;
+        private static readonly string[] page_names = { "Dialogue", "Display", "Controller", "Keyboard" };
         private static readonly int[][] page_rows = {
             new[] { 0, 1, 2, 3, 4, 10, 12, 8, 9 },
             new[] { 5, 6, 17, 9 },
-            new[] { 7, 13, 14, 15, 16, 18, 9 }
+            new[] { 7, 13, 14, 15, 16, 18, 24, 9 },
+            new[] { 19, 20, 21, 22, 23, 24, 9 }
         };
-        private readonly string[] labels = new string[19];
+        private readonly string[] labels = new string[25];
         private bool labels_dirty = true;
         private GUIStyle row_style;
         private GUIStyle heading_style;
@@ -54,9 +63,10 @@ namespace SpiritOfTheSamuraiUltrawide
         internal static void Init(ConfigFile file)
         {
             config = file;
+            BindingSettings.Init(file);
             menu_key = file.Bind("Menu", "Key", KeyCode.F1, "Open or close mod settings. Set to None to disable the keyboard shortcut.");
             controller_shortcuts = file.Bind("Controller", "EnableShortcuts", true,
-                "Enable mod controller shortcuts: hold Select/Back and press LB for settings, RB for history, or Y for auto/manual dialogue. D-pad navigates panels, A activates, B closes.");
+                "Enable mod controller shortcuts: hold Select/Back and press LB for settings, Y for history, or RB for auto/manual dialogue. D-pad navigates panels, A activates, B closes.");
             ControllerInput.Init(file);
             file.SaveOnConfigSet = false;
             file.SettingChanged += OnSettingChanged;
@@ -107,7 +117,7 @@ namespace SpiritOfTheSamuraiUltrawide
             bool open = !IsOpen;
             DialogueHistory.Close();
             window.enabled = open;
-            if (open) { window.selected = 0; window.vertical_repeat = default; window.horizontal_repeat = default; window.labels_dirty = true; }
+            if (open) { window.binding_index = -1; window.confirm_reset_until = 0; window.selected = 0; window.vertical_repeat = default; window.horizontal_repeat = default; window.labels_dirty = true; }
             consumed_frame = Time.frameCount;
             Plugin.Log.LogInfo($"[menu] settings {(open ? "opened" : "closed")}.");
             SyncInput();
@@ -115,7 +125,7 @@ namespace SpiritOfTheSamuraiUltrawide
 
         internal static void Close()
         {
-            if (window != null) window.enabled = false;
+            if (window != null) { window.binding_index = -1; window.enabled = false; }
         }
 
         internal static void Tick()
@@ -123,6 +133,14 @@ namespace SpiritOfTheSamuraiUltrawide
             SaveConfigTick();
             Gamepad pad = Pad;
             UpdateCursorMode(pad);
+            if (IsOpen && window.binding_index >= 0)
+            {
+                // Track held chords while the picker consumes them, so closing cannot replay a press.
+                ControllerInput.Shortcut(pad, ControllerShortcuts);
+                window.BindingTick(pad);
+                SyncInput();
+                return;
+            }
             int shortcut = ControllerInput.Shortcut(pad, ControllerShortcuts);
             if ((menu_key.Value != KeyCode.None && Input.GetKeyDown(menu_key.Value)) ||
                 shortcut == 1) Toggle();
@@ -156,6 +174,7 @@ namespace SpiritOfTheSamuraiUltrawide
                     else if (!modifier && pad != null && pad.leftShoulder.wasPressedThisFrame) window.ChangePage(-1);
                     int count = page_rows[window.page].Length;
                     int vertical = ControllerInput.Repeat(ref window.vertical_repeat, KeyCode.UpArrow, KeyCode.DownArrow, pad?.dpad.up, pad?.dpad.down);
+                    if (vertical != 0) window.CancelConfirmations();
                     window.selected = (window.selected + vertical + count) % count;
                     int horizontal = ControllerInput.Repeat(ref window.horizontal_repeat, KeyCode.LeftArrow, KeyCode.RightArrow, pad?.dpad.left, pad?.dpad.right);
                     bool activate = Input.GetKeyDown(KeyCode.Return) || (pad != null && pad.buttonSouth.wasPressedThisFrame);
@@ -175,9 +194,72 @@ namespace SpiritOfTheSamuraiUltrawide
             selected = 0;
             vertical_repeat = default;
             horizontal_repeat = default;
+            CancelConfirmations();
+            labels_dirty = true;
         }
 
-        private static bool IsNumeric(int row) => row == 1 || row == 3 || row == 4 || row == 10 || (row >= 13 && row <= 16) || row == 18;
+        private static bool IsNumeric(int row) => row == 1 || row == 3 || row == 4 || row == 10;
+
+        private void CancelConfirmations()
+        {
+            if (confirm_reset_until == 0 && confirm_clear_until == 0) return;
+            confirm_reset_until = confirm_clear_until = 0;
+            labels_dirty = true;
+        }
+
+        private static int BindingIndex(int row) => row >= 19 && row <= 23 ? row - 19 :
+            row >= 13 && row <= 16 ? row - 8 : row == 18 ? 9 : -1;
+
+        private void OpenBinding(int index)
+        {
+            binding_index = index;
+            binding_options = BindingSettings.Options(index);
+            RefreshBindingOptions();
+            binding_selected = binding_options.IndexOf(BindingSettings.Current(index));
+            binding_scroll = new Vector2(0, Mathf.Max(0, binding_selected - 5) * 48f);
+            vertical_repeat = default;
+            confirm_reset_until = 0;
+            confirm_clear_until = 0;
+        }
+
+        private void RefreshBindingOptions()
+        {
+            if (binding_labels == null || binding_labels.Length != binding_options.Count)
+            {
+                binding_labels = new string[binding_options.Count];
+                binding_allowed = new bool[binding_options.Count];
+            }
+            for (int index = 0; index < binding_options.Count; index++)
+            {
+                object option = binding_options[index];
+                binding_allowed[index] = BindingSettings.Allowed(binding_index, option);
+                binding_labels[index] = BindingSettings.OptionName(binding_index, option) + (binding_allowed[index] ? (option.Equals(BindingSettings.Current(binding_index)) ? " (current)" : "") : BindingSettings.UnavailableReason(binding_index, option));
+            }
+            binding_title = BindingSettings.Label(binding_index);
+            binding_revision = config_revision;
+        }
+
+        private void SelectBinding(int index)
+        {
+            if (!BindingSettings.Set(binding_index, binding_options[index])) return;
+            binding_index = -1;
+            labels_dirty = true;
+            consumed_frame = Time.frameCount;
+        }
+
+        private void BindingTick(Gamepad pad)
+        {
+            if (binding_revision != config_revision) RefreshBindingOptions();
+            consumed_frame = Time.frameCount;
+            if (Input.GetKeyDown(KeyCode.Escape) || (pad != null && pad.buttonEast.wasPressedThisFrame)) { binding_index = -1; return; }
+            int delta = ControllerInput.Repeat(ref vertical_repeat, KeyCode.UpArrow, KeyCode.DownArrow, pad?.dpad.up, pad?.dpad.down);
+            if (delta != 0)
+            {
+                binding_selected = ModLogic.NextAvailable(binding_allowed, binding_selected, delta);
+                binding_scroll.y = Mathf.Clamp(binding_scroll.y, (binding_selected + 1) * 48f - 480f, binding_selected * 48f);
+            }
+            if (Input.GetKeyDown(KeyCode.Return) || (pad != null && pad.buttonSouth.wasPressedThisFrame)) SelectBinding(binding_selected);
+        }
 
         internal static int Direction(KeyCode negative, KeyCode positive,
             UnityEngine.InputSystem.Controls.ButtonControl minus, UnityEngine.InputSystem.Controls.ButtonControl plus)
@@ -285,6 +367,13 @@ namespace SpiritOfTheSamuraiUltrawide
 
         private static string Label(int row)
         {
+            int binding = BindingIndex(row);
+            if (binding >= 0) return BindingSettings.Label(binding);
+            if (row == 24)
+            {
+                string device = window.page == 2 ? "controller" : "keyboard";
+                return window.confirm_reset_until > Time.unscaledTime ? "Reset " + device + " bindings? Press again to confirm" : "Reset " + device + " bindings to defaults";
+            }
             switch (row)
             {
                 case 0: return "Auto-advance: " + (DialogueAdvance.AutoAdvance ? "On" : "Off");
@@ -310,6 +399,10 @@ namespace SpiritOfTheSamuraiUltrawide
 
         private static void Change(int row, int direction)
         {
+            if (row != 24) window.confirm_reset_until = 0;
+            if (row != 12) window.confirm_clear_until = 0;
+            int binding = BindingIndex(row);
+            if (binding >= 0) { window.OpenBinding(binding); return; }
             switch (row)
             {
                 case 0: DialogueAdvance.AutoAdvance = !DialogueAdvance.AutoAdvance; break;
@@ -332,6 +425,11 @@ namespace SpiritOfTheSamuraiUltrawide
                         Plugin.LimitResolutionToDisplay.Value ? "Limits resolution to your display size at the next resolution change." : "Allows resolutions above your display size at the next resolution change.");
                     break;
                 case 7:
+                    if (ControllerShortcuts && menu_key.Value == KeyCode.None)
+                    {
+                        ShortcutFeedback.Show("Keep a settings shortcut", "Assign a keyboard key for the mod menu before disabling controller shortcuts.");
+                        break;
+                    }
                     ControllerShortcuts = !ControllerShortcuts;
                     ShortcutFeedback.Show(ControllerShortcuts ? "Controller shortcuts enabled" : "Controller shortcuts disabled",
                         ControllerShortcuts ? "Your configured controller shortcuts are active." : "Keyboard shortcuts still work. Controller navigation remains available in open mod panels.");
@@ -349,6 +447,10 @@ namespace SpiritOfTheSamuraiUltrawide
                 case 16: ControllerInput.Cycle(ControllerInput.Auto, direction); break;
                 case 17: PlayerLight.Enabled = !PlayerLight.Enabled; break;
                 case 18: ControllerInput.Cycle(ControllerInput.Light, direction); break;
+                case 24:
+                    if (window.confirm_reset_until > Time.unscaledTime) { BindingSettings.Reset(window.page == 2); window.confirm_reset_until = 0; }
+                    else window.confirm_reset_until = Time.unscaledTime + 4f;
+                    break;
             }
             window.labels_dirty = true;
         }
@@ -376,20 +478,21 @@ namespace SpiritOfTheSamuraiUltrawide
             GameUiTheme.Panel(panel);
             GUI.Label(new Rect(panel.x + 50, panel.y + 30, panel.width - 100, 48), "Mod settings", heading_style);
             GUI.Label(new Rect(panel.x + 50, panel.y + 80, panel.width - 100, 30), "THE SPIRIT OF THE SAMURAI", help_style);
-            float tab_width = (panel.width - 100) / 3;
-            for (int tab = 0; tab < 3; tab++)
+            float tab_width = (panel.width - 100) / page_names.Length;
+            for (int tab = 0; tab < page_names.Length; tab++)
             {
-                if (GameUiTheme.Button(new Rect(panel.x + 50 + tab * tab_width, panel.y + 122, tab_width - 8, 42), page_names[tab], small_button_style, page == tab))
+                if (binding_index < 0 && GameUiTheme.Button(new Rect(panel.x + 50 + tab * tab_width, panel.y + 122, tab_width - 8, 42), page_names[tab], small_button_style, page == tab))
                     ChangePage(tab - page);
             }
             if (confirm_clear_until != 0 && Time.unscaledTime >= confirm_clear_until) { confirm_clear_until = 0; labels_dirty = true; }
+            if (confirm_reset_until != 0 && Time.unscaledTime >= confirm_reset_until) { confirm_reset_until = 0; labels_dirty = true; }
             if (labels_dirty)
             {
                 for (int index = 0; index < labels.Length; index++) labels[index] = Label(index);
                 labels_dirty = false;
             }
             int[] rows = page_rows[page];
-            for (int index = 0; index < rows.Length; index++)
+            for (int index = 0; binding_index < 0 && index < rows.Length; index++)
             {
                 int row = rows[index];
                 float row_y = panel.y + 180 + index * 56;
@@ -406,7 +509,8 @@ namespace SpiritOfTheSamuraiUltrawide
                     if (GameUiTheme.Button(new Rect(panel.xMax - 105, row_y, 55, 50), "+", small_button_style)) { selected = index; Change(row, 1); }
                 }
             }
-            GUI.Label(new Rect(panel.x + 50, panel.yMax - 116, panel.width - 100, 28), "LB / RB or Tab: change page. Hold D-pad / arrows to repeat. Settings save automatically.", help_style);
+            if (binding_index >= 0) DrawBindingDropdown(panel);
+            GUI.Label(new Rect(panel.x + 50, panel.yMax - 116, panel.width - 100, 28), binding_index >= 0 ? "Up / Down: choose. Enter / A: apply. Esc / B: cancel." : "LB / RB or Tab: change page. Hold D-pad / arrows to repeat. Settings save automatically.", help_style);
             GameUiTheme.Rule(new Rect(panel.x + 50, panel.yMax - 85, panel.width - 100, 1));
             float hint_y = panel.yMax - 65;
             GameUiTheme.Hint(new Rect(panel.x + 50, hint_y, 300, 35), "XB1_DPadUp", "↑", "Navigate / adjust", help_style);
@@ -414,6 +518,26 @@ namespace SpiritOfTheSamuraiUltrawide
             GameUiTheme.Hint(new Rect(panel.xMax - 300, hint_y, 250, 35), "XB1_B", "B", "Back  /  Esc", help_style);
             GUI.matrix = previous;
             GUI.depth = previous_depth;
+        }
+
+        private void DrawBindingDropdown(Rect panel)
+        {
+            GUI.Label(new Rect(panel.x + 50, panel.y + 175, panel.width - 100, 40), binding_title, row_style);
+            GUI.Label(new Rect(panel.x + 50, panel.y + 220, panel.width - 100, 55), binding_index < 5 ? "Choose a key. Top row means the numbers above the letters. Numeric keypad means the separate number pad." : "Choose a controller button. Used buttons are unavailable. None disables the shortcut; for the modifier it allows single-button shortcuts.", help_style);
+            var view = new Rect(panel.x + 50, panel.y + 285, panel.width - 100, 480);
+            binding_scroll = GUI.BeginScrollView(view, binding_scroll, new Rect(0, 0, view.width - 24, binding_options.Count * 48f));
+            int first = Mathf.Max(0, Mathf.FloorToInt(binding_scroll.y / 48f));
+            int end = Mathf.Min(binding_options.Count, Mathf.CeilToInt((binding_scroll.y + view.height) / 48f));
+            for (int index = first; index < end; index++)
+            {
+                bool previous = GUI.enabled;
+                GUI.enabled = previous && binding_allowed[index];
+                bool clicked = GameUiTheme.Button(new Rect(0, index * 48f, view.width - 28, 44), binding_labels[index], row_style, index == binding_selected);
+                GUI.enabled = previous;
+                if (clicked) { SelectBinding(index); break; }
+            }
+            GUI.EndScrollView();
+            if (GameUiTheme.Button(new Rect(panel.x + 50, panel.y + 780, panel.width - 100, 42), "Cancel", small_button_style)) binding_index = -1;
         }
 
         // Navigation is handled once in Update; prevent a focused IMGUI button from also activating.

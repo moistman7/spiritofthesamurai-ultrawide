@@ -20,7 +20,7 @@ namespace SpiritOfTheSamuraiUltrawide
     //  - Videos are 16:9 RawImages, so the scene shows beside them instead of black bars.
     //  - Menus park their hidden pages one 16:9 screen-width off-center, which is now partly on screen.
     //  - Camera-attached backdrops and overlays (sky, vignette, damage border) are sized to the 16:9 view.
-    [BepInPlugin("renodx.spiritofthesamurai.ultrawide", "Spirit of the Samurai Ultrawide", "1.13.0")]
+    [BepInPlugin("renodx.spiritofthesamurai.ultrawide", "Spirit of the Samurai Ultrawide", "1.14.0")]
     public class Plugin : BaseUnityPlugin
     {
         private static readonly Rect FullViewport = new Rect(0f, 0f, 1f, 1f);
@@ -139,6 +139,16 @@ namespace SpiritOfTheSamuraiUltrawide
             }
             foreach (Transform root in Resources.FindObjectsOfTypeAll<Transform>())
             {
+                if (root.gameObject.scene.IsValid() && root.GetComponent<loadScene>() != null)
+                    TransitionScreenFitter.Attach(root.gameObject);
+                if (root.gameObject.scene == scene && scene.name == "LoadingScreen")
+                {
+                    SpriteRenderer sprite = root.GetComponent<SpriteRenderer>();
+                    Graphic graphic = root.GetComponent<Graphic>();
+                    Color color = sprite != null ? sprite.color : graphic != null ? graphic.color : Color.white;
+                    if ((sprite != null || graphic != null) && color.r < 0.05f && color.g < 0.05f && color.b < 0.05f)
+                        TransitionScreenFitter.Attach(root.gameObject);
+                }
                 if (root.name == "StaticUI" && root.gameObject.scene.IsValid() && root.parent != null &&
                     root.parent.name == "InGameUI" && root.GetComponent<RightHudAnchor>() == null)
                 {
@@ -200,6 +210,15 @@ namespace SpiritOfTheSamuraiUltrawide
                 path = parent.name + "/" + path;
             }
             return path;
+        }
+
+        [HarmonyPostfix, HarmonyPatch(typeof(loadScene), "Awake")]
+        private static void FitLoadingFade(loadScene __instance) => TransitionScreenFitter.Attach(__instance.gameObject);
+
+        [HarmonyPostfix, HarmonyPatch(typeof(MainMenuController), "Start")]
+        private static void FitMainMenuFade(MainMenuController __instance)
+        {
+            if (__instance.faderAnim != null) TransitionScreenFitter.Attach(__instance.faderAnim.gameObject);
         }
 
         // Both bool overloads are patched in case Mono inlines the 3-argument wrapper into game code.
@@ -340,6 +359,7 @@ namespace SpiritOfTheSamuraiUltrawide
     {
         private class Page
         {
+            public Transform Root;
             public readonly List<Renderer> Renderers = new List<Renderer>();
             public readonly List<Graphic> Graphics = new List<Graphic>();
         }
@@ -351,6 +371,11 @@ namespace SpiritOfTheSamuraiUltrawide
 
         private void LateUpdate()
         {
+            if (Screen.width <= Screen.height * 16f / 9f)
+            {
+                if (hidden_renderers.Count != 0 || hidden_graphics.Count != 0) RestoreVisibility();
+                return;
+            }
             if (Time.frameCount % 30 == 0 || pages.Count == 0)
             {
                 RestoreVisibility();
@@ -360,6 +385,7 @@ namespace SpiritOfTheSamuraiUltrawide
                 for (int i = 0; i < count; i++)
                 {
                     Transform child = transform.GetChild(i);
+                    pages[i].Root = child;
                     child.GetComponentsInChildren(true, pages[i].Renderers);
                     child.GetComponentsInChildren(true, pages[i].Graphics);
                 }
@@ -376,6 +402,8 @@ namespace SpiritOfTheSamuraiUltrawide
             }
             foreach (Page page in pages)
             {
+                // Inactive pages cannot render; recompute immediately when they become active again.
+                if (page.Root == null || !page.Root.gameObject.activeInHierarchy) continue;
                 Vector2 span = new Vector2(float.MaxValue, float.MinValue);
                 bool has_bounds = false;
                 foreach (Renderer renderer in page.Renderers)
@@ -470,6 +498,10 @@ namespace SpiritOfTheSamuraiUltrawide
 
         private const int RefreshFrames = 30;
         private readonly Dictionary<SpriteRenderer, Fit> fits = new Dictionary<SpriteRenderer, Fit>();
+        private readonly List<SpriteRenderer> sprite_buffer = new List<SpriteRenderer>();
+        private readonly List<SpriteRenderer> canvas_sprite_buffer = new List<SpriteRenderer>();
+        private static Canvas[] shared_canvases = new Canvas[0];
+        private static int canvas_scan_frame = -1;
         private Camera owner;
 
         private void Awake()
@@ -505,12 +537,19 @@ namespace SpiritOfTheSamuraiUltrawide
                 entry.Value.AppliedScaleX = local.x;
             }
             if (Time.frameCount % RefreshFrames != 0 || !owner.isActiveAndEnabled) return;
-            IEnumerable<SpriteRenderer> sprites = GetComponentsInChildren<SpriteRenderer>();
-            foreach (Canvas canvas in FindObjectsOfType<Canvas>())
+            GetComponentsInChildren(false, sprite_buffer);
+            if (canvas_scan_frame != Time.frameCount)
             {
+                shared_canvases = FindObjectsOfType<Canvas>();
+                canvas_scan_frame = Time.frameCount;
+            }
+            foreach (Canvas canvas in shared_canvases)
+            {
+                if (canvas == null || !canvas.gameObject.activeInHierarchy) continue;
                 if (canvas.isRootCanvas && (canvas.worldCamera == owner || SharesViewWith(canvas.worldCamera)))
                 {
-                    sprites = sprites.Concat(canvas.GetComponentsInChildren<SpriteRenderer>());
+                    canvas.GetComponentsInChildren(false, canvas_sprite_buffer);
+                    sprite_buffer.AddRange(canvas_sprite_buffer);
                 }
             }
             float width = Screen.width;
@@ -520,7 +559,7 @@ namespace SpiritOfTheSamuraiUltrawide
             // moving after the first fit, so a thin margin leaves strips at the edges later.
             float overscan = width * 0.06f;
             float regrow_below = width * 0.02f;
-            foreach (SpriteRenderer sprite in sprites)
+            foreach (SpriteRenderer sprite in sprite_buffer)
             {
                 if (sprite.sprite == null || !sprite.enabled || sprite.GetComponentInParent<SafeAreaClipper>() != null) continue;
                 Transform t = sprite.transform;
@@ -593,6 +632,14 @@ namespace SpiritOfTheSamuraiUltrawide
         {
             // Different cutscene objects reuse the same RenderTexture/RawImage. Never retain the first
             // matching player as the sole owner, and exclude idle black-video placeholder playback.
+            Canvas root = video.canvas != null ? video.canvas.rootCanvas : null;
+            if (!video.isActiveAndEnabled || root == null || !root.isActiveAndEnabled || video.texture == null)
+            {
+                if (backdrop_canvas.enabled) backdrop_canvas.enabled = false;
+                RestoreUv();
+                was_visible = false;
+                return;
+            }
             int scene = SceneManager.GetActiveScene().handle;
             if (players_scan_frame != Time.frameCount &&
                 (players_scene != scene || players.Length == 0 || Time.frameCount % 30 == 0))
@@ -616,7 +663,6 @@ namespace SpiritOfTheSamuraiUltrawide
             }
             if (Player != active_player) was_visible = false;
             Player = active_player;
-            Canvas root = video.canvas != null ? video.canvas.rootCanvas : null;
             bool visible = Player != null && (Player.isPlaying || Player.isPaused)
                 && video.isActiveAndEnabled && root != null && root.isActiveAndEnabled
                 && video.texture == Player.targetTexture && !video.canvasRenderer.cull;
@@ -678,17 +724,19 @@ namespace SpiritOfTheSamuraiUltrawide
                 visible = false;
             }
             if (!visible) RestoreUv();
-            backdrop_canvas.enabled = visible;
+            if (backdrop_canvas.enabled != visible) backdrop_canvas.enabled = visible;
             was_visible = visible;
         }
 
         private void SetBar(int index, Vector2 min, Vector2 max)
         {
             RectTransform rect = bars[index].rectTransform;
-            rect.anchorMin = min;
-            rect.anchorMax = max;
-            rect.offsetMin = rect.offsetMax = Vector2.zero;
-            bars[index].color = new Color(0f, 0f, 0f, video.color.a * video.canvasRenderer.GetInheritedAlpha());
+            if (rect.anchorMin != min) rect.anchorMin = min;
+            if (rect.anchorMax != max) rect.anchorMax = max;
+            if (rect.offsetMin != Vector2.zero) rect.offsetMin = Vector2.zero;
+            if (rect.offsetMax != Vector2.zero) rect.offsetMax = Vector2.zero;
+            Color color = new Color(0f, 0f, 0f, video.color.a * video.canvasRenderer.GetInheritedAlpha());
+            if (!bars[index].color.Equals(color)) bars[index].color = color;
         }
 
         private void RestoreUv()

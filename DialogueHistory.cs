@@ -98,7 +98,7 @@ namespace SpiritOfTheSamuraiUltrawide
 
         internal static void Tick()
         {
-            if (key.Value != KeyCode.None && Input.GetKeyDown(key.Value)) Toggle();
+            if (!ModMenu.IsOpen && key.Value != KeyCode.None && Input.GetKeyDown(key.Value)) Toggle();
             else if (IsOpen && (Input.GetKeyDown(KeyCode.Escape) ||
                 (ModMenu.Pad != null && ModMenu.Pad.buttonEast.wasPressedThisFrame))) Close();
         }

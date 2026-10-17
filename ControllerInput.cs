@@ -16,8 +16,8 @@ namespace SpiritOfTheSamuraiUltrawide
         {
             Modifier = file.Bind("Controller", "Modifier", PadButton.Select, "Hold this button for mod shortcuts. None allows single-button shortcuts.");
             Menu = file.Bind("Controller", "MenuButton", PadButton.LeftShoulder, "Button combined with Modifier to open mod settings. None disables this shortcut.");
-            History = file.Bind("Controller", "HistoryButton", PadButton.RightShoulder, "Button combined with Modifier to open history. None disables this shortcut.");
-            Auto = file.Bind("Controller", "AutoButton", PadButton.North, "Button combined with Modifier to toggle automatic/manual dialogue. None disables this shortcut.");
+            History = file.Bind("Controller", "HistoryButton", PadButton.North, "Button combined with Modifier to open history. None disables this shortcut.");
+            Auto = file.Bind("Controller", "AutoButton", PadButton.RightShoulder, "Button combined with Modifier to toggle automatic/manual dialogue. None disables this shortcut.");
             Light = file.Bind("Controller", "LightButton", PadButton.West, "Button combined with Modifier to toggle existing player lights. None disables this shortcut.");
             repeat_delay = file.Bind("Controller", "RepeatDelay", 0.35f, new ConfigDescription("Seconds before held D-pad/arrow navigation repeats.", new AcceptableValueRange<float>(0.15f, 1f)));
             repeat_interval = file.Bind("Controller", "RepeatInterval", 0.09f, new ConfigDescription("Seconds between held navigation steps.", new AcceptableValueRange<float>(0.04f, 0.3f)));

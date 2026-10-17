@@ -12,6 +12,8 @@ namespace SpiritOfTheSamuraiUltrawide
         private static GUIStyle style;
         private static GUIStyle detail_style;
         private static string detail;
+        private static readonly GUIContent detail_content = new GUIContent();
+        private static float measured_width = -1f, detail_height;
         private static int theme_revision = -1;
 
         internal static void Init(GameObject host)
@@ -33,6 +35,8 @@ namespace SpiritOfTheSamuraiUltrawide
             if (window == null) return;
             message = text;
             detail = explanation;
+            detail_content.text = explanation ?? "";
+            measured_width = -1f;
             window.enabled = true;
             expires = Time.unscaledTime + Duration;
         }
@@ -40,6 +44,8 @@ namespace SpiritOfTheSamuraiUltrawide
         internal static void Clear()
         {
             message = null;
+            detail = null;
+            detail_content.text = "";
             if (window != null) window.enabled = false;
         }
 
@@ -56,6 +62,7 @@ namespace SpiritOfTheSamuraiUltrawide
                 detail_style = GameUiTheme.TextStyle(21, GameUiTheme.Ink, false, true);
                 detail_style.alignment = TextAnchor.MiddleCenter;
                 theme_revision = GameUiTheme.Revision;
+                measured_width = -1f;
             }
 
             Matrix4x4 previous_matrix = GUI.matrix;
@@ -68,7 +75,11 @@ namespace SpiritOfTheSamuraiUltrawide
                 GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(scale, scale, 1f));
                 GUI.depth = -200;
                 float width = Mathf.Min(680f, Screen.width / scale - 32f);
-                float detail_height = string.IsNullOrEmpty(detail) ? 0f : detail_style.CalcHeight(new GUIContent(detail), width - 48f);
+                if (measured_width != width)
+                {
+                    detail_height = string.IsNullOrEmpty(detail) ? 0f : detail_style.CalcHeight(detail_content, width - 48f);
+                    measured_width = width;
+                }
                 var rect = new Rect((Screen.width / scale - width) * 0.5f, 65f, width, 70f + detail_height);
                 float alpha = Mathf.Clamp01(remaining / 0.35f);
                 GUI.color = new Color(1f, 1f, 1f, alpha);

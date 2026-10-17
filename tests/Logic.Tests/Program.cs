@@ -8,6 +8,18 @@ void Check(bool condition, string name)
 }
 
 var subtitle = new object();
+Check(Math.Abs(ModLogic.FullscreenWidthFactor(760, 2680, 1720, 3440) - 1721f / 960f) < 0.0001f, "Loading fade expands to both ultrawide edges");
+Check(ModLogic.FullscreenWidthFactor(-2, 3442, 1720, 3440) == 1f, "Already covering fade does not grow repeatedly");
+Check(ModLogic.FullscreenWidthFactor(100, 100, 100, 3440) == 1f, "Degenerate transition geometry is unchanged");
+Check(ModLogic.FullscreenWidthFactor(0, 100, 200, 3440) == 1f, "Invalid transition pivot is unchanged");
+bool[] choices = { true, false, false, true, false };
+Check(ModLogic.NextAvailable(choices, 0, 1) == 3, "Binding navigation skips unavailable choices");
+Check(ModLogic.NextAvailable(choices, 3, 1) == 0, "Binding navigation wraps forward past unavailable choices");
+Check(ModLogic.NextAvailable(choices, 0, -1) == 3, "Binding navigation wraps backward past unavailable choices");
+Check(ModLogic.NextAvailable(new[] { false, true, false }, 1, 1) == 1, "Single available binding stays selected");
+Check(ModLogic.NextAvailable(new[] { false, false }, 1, -1) == 1, "Unavailable binding list cannot loop forever");
+Check(ModLogic.NextAvailable(System.Array.Empty<bool>(), 0, 1) == 0, "Empty binding list remains safe");
+Check(ModLogic.NextAvailable(choices, 0, 0) == 0, "No binding navigation preserves selection");
 Check(ModLogic.ShouldFallbackContinue(subtitle, subtitle, 10, 20, true), "Unchanged waiting subtitle gets fallback");
 Check(!ModLogic.ShouldFallbackContinue(subtitle, new object(), 10, 20, true), "Native advance after mod input cannot skip next line");
 Check(!ModLogic.ShouldFallbackContinue(subtitle, subtitle, 20, 20, true), "Native advance before mod input cannot skip next line");

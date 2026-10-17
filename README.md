@@ -29,7 +29,7 @@ and fixes the things that break once the view is wider. Includes experimental St
 1. Close the game and install BepInEx 5 x64 into the game folder (where `samurai.exe` is).
 2. Copy `SpiritOfTheSamuraiUltrawide.dll` to `BepInEx/plugins/` (replace any older version).
 3. Launch the game. `BepInEx/LogOutput.log` should contain
-   `Loading [Spirit of the Samurai Ultrawide 1.13.0]`.
+   `Loading [Spirit of the Samurai Ultrawide 1.14.0]`.
 
 To uninstall, delete the DLL.
 
@@ -85,8 +85,8 @@ fixes are always on. Available options:
 | `Controller.EnableShortcuts` | `true` | Enable configurable mod controller shortcuts. Button names use Xbox positions. |
 | `Controller.Modifier` | `Select` | Hold this button for shortcuts; `None` allows single-button shortcuts. |
 | `Controller.MenuButton` | `LeftShoulder` | Mod settings shortcut, combined with Modifier. |
-| `Controller.HistoryButton` | `RightShoulder` | History shortcut, combined with Modifier. |
-| `Controller.AutoButton` | `North` | Automatic/manual dialogue shortcut (Y), combined with Modifier. |
+| `Controller.HistoryButton` | `North` | History shortcut, combined with Modifier. |
+| `Controller.AutoButton` | `RightShoulder` | Automatic/manual dialogue shortcut (RB), combined with Modifier. |
 | `Controller.LightButton` | `West` | Existing player-light shortcut (X), combined with Modifier. |
 | `Controller.RepeatDelay` | `0.35` | Delay before held D-pad/arrow navigation repeats, in seconds. |
 | `Controller.RepeatInterval` | `0.09` | Seconds between held navigation steps. |
@@ -111,7 +111,7 @@ Manual dialogue accepts Space or controller A, with a fallback if the native Con
 The fallback checks the subtitle identity and start frame to avoid advancing twice.
 The lower-right arrow/bag HUD follows the ultrawide right edge, and the cutscene skip bar uses a centered anchor.
 
-The mod menu has Dialogue, Display and Controller pages. LB/RB or Tab changes page; mouse tabs also work.
+The mod menu has Dialogue, Display, Controller and Keyboard pages. LB/RB or Tab changes page; mouse tabs also work.
 Use Up/Down to select and Left/Right to adjust, or click a row and its +/− buttons. Hold the D-pad or arrow
 keys to repeat navigation and numeric changes. Controller shortcut buttons cycle through available choices;
 None disables a shortcut. The menu avoids assigning duplicate buttons when cycling bindings.
@@ -168,3 +168,27 @@ MIT licensed, see `LICENSE`. *The Spirit of the Samurai* belongs to its develope
 ## Current working snapshot
 
 See [CURRENT-BUILD.md](CURRENT-BUILD.md) for the exact installed plugin binary and [the splash settings tool](tools/SplashSettings/README.md) for the confirmed local Unity splash fix. No previous binaries or game assets are included.
+
+Keyboard and controller bindings use game-themed dropdown lists in F1 > Keyboard / Controller.
+Choose with the mouse or Up/Down / D-pad and Enter / A; Esc / B cancels. None disables a binding.
+Bindings already used by another mod action are unavailable. Keyboard choices reserve navigation keys,
+F7/F8 for the separate HDR companion, and F9 for diagnostics; Space is available for manual advance.
+The reset button resets only that page's bindings: Keyboard resets keyboard keys; Controller resets controller
+buttons. Press again within four seconds to confirm. Bindings for the other device are retained. A controller
+reset also enables controller shortcuts if the keyboard menu key is disabled, keeping settings accessible.
+Existing saved bindings are preserved until changed or reset.
+
+Default shortcuts align with Belmont's Curse where the features overlap: F1 / Select+LB opens settings,
+F10 / Select+Y opens history, and F6 / Select+RB toggles dialogue auto/manual mode. Samurai has one combined
+auto/manual mode rather than separate voiced/unvoiced modes. F4 / Select+X remains the player-light toggle;
+Space / unmodified controller A advances manual dialogue.
+Binding pickers identify the current binding and the action using each unavailable choice. Controller/keyboard
+navigation skips unavailable choices. The menu keeps at least one settings shortcut available. Moving away
+from reset/clear cancels confirmation. Modifier None means single-button shortcuts, not disabled shortcuts.
+Picker labels and notification text measurements are cached; pickers draw only visible options. Periodic
+sprite fitting reuses component lists. No measured frame-time improvement is claimed.
+
+Additional frame-work cleanup skips inactive menu-page bounds and unnecessary 16:9 clipping, shares periodic
+canvas discovery between sprite-fit cameras, skips inactive video surfaces, and avoids unchanged video-bar
+layout/color writes. Animated HUD, dialogue, video fade, and loading fade behavior remain enabled. These are
+code-level reductions; no in-game frame-time benchmark has been measured.
