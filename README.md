@@ -68,6 +68,7 @@ fixes are always on. Available options:
 | Setting | Default | Meaning |
 |---|---|---|
 | `Display.LimitResolutionToDisplay` | `true` | Cap fitted presets at the display size. Set to `false` to allow supersampling. |
+| `General.SkipIntros` | `true` | Skip the start-up logo videos and go straight to the main menu. Set to `false` to play them. |
 | `Diagnostics.EnableSceneInventory` | `false` | Write a scene dump to `BepInEx/diagnostics` automatically (for bug reports). F9 writes one on demand. |
 
 ## Known limitations

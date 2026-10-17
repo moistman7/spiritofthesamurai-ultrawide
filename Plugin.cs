@@ -31,6 +31,10 @@ namespace SpiritOfTheSamuraiUltrawide
         internal static BepInEx.Logging.ManualLogSource Log;
         internal static ConfigEntry<bool> EnableSceneInventory;
         internal static ConfigEntry<bool> LimitResolutionToDisplay;
+        internal static ConfigEntry<bool> SkipIntros;
+
+        // Start-up scenes driven by videoEnd that SkipIntros ends immediately. Story cutscenes and the ending are not listed.
+        private static readonly string[] IntroScenes = { "VideointroLogos", "SentimentGA" };
 
         private void Awake()
         {
@@ -39,6 +43,8 @@ namespace SpiritOfTheSamuraiUltrawide
                 "Cap fitted resolution presets to the display size (recommended for Steam Deck). Disable to allow supersampling.");
             EnableSceneInventory = Config.Bind("Diagnostics", "EnableSceneInventory", false,
                 "Write scene inventories automatically for troubleshooting. F9 writes an inventory manually even when this is disabled.");
+            SkipIntros = Config.Bind("General", "SkipIntros", true,
+                "Skip the start-up logo videos and go straight to the main menu.");
             Harmony.CreateAndPatchAll(typeof(Plugin));
             SceneManager.sceneLoaded += OnSceneLoaded;
             Logger.LogInfo($"Display {Display.main.systemWidth}x{Display.main.systemHeight}, ultrawide patches applied.");
@@ -187,6 +193,20 @@ namespace SpiritOfTheSamuraiUltrawide
                 ____renderCamera.rect = FullViewport;
             }
             return false;
+        }
+
+        // videoEnd plays a scene's video and then loads the next scene from Exit(). Calling Exit() once Start() has
+        // set up its fader and input leaves the same fade and load as the game's own skip, without playing the video.
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(videoEnd), "Start")]
+        private static void SkipIntroVideo(videoEnd __instance)
+        {
+            string scene = __instance.gameObject.scene.name;
+            if (!SkipIntros.Value || !IntroScenes.Contains(scene)) return;
+            Log.LogInfo($"[{scene}] skipping intro video.");
+            VideoPlayer player = __instance.GetComponent<VideoPlayer>();
+            if (player != null) player.enabled = false;
+            AccessTools.Method(typeof(videoEnd), "Exit").Invoke(__instance, null);
         }
 
         // Expand scales by the smaller axis: height on wide screens, unchanged at 16:9 and narrower.
@@ -472,6 +492,7 @@ namespace SpiritOfTheSamuraiUltrawide
     {
         public VideoPlayer Player;
         private RawImage video;
+        private Rect original_uv;
         private Canvas backdrop_canvas;
         private readonly Image[] bars = new Image[4];
         private readonly Vector3[] corners = new Vector3[4];
@@ -481,6 +502,7 @@ namespace SpiritOfTheSamuraiUltrawide
         private void Awake()
         {
             video = GetComponent<RawImage>();
+            original_uv = video.uvRect;
             var backdrop_object = new GameObject("UltrawideVideoBars", typeof(RectTransform), typeof(Canvas));
             SceneManager.MoveGameObjectToScene(backdrop_object, gameObject.scene);
             backdrop_canvas = backdrop_object.GetComponent<Canvas>();
@@ -541,6 +563,29 @@ namespace SpiritOfTheSamuraiUltrawide
                     && min.y < Screen.height * 0.5f && max.y > Screen.height * 0.5f;
                 if (visible)
                 {
+                    // The RawImage often fills the whole (wider) canvas, which stretches the video. Show it at its
+                    // own aspect instead: remap the UVs into a centered rect and let the bars cover the rest.
+                    Rect uv = original_uv;
+                    Vector2 size = max - min;
+                    float texture_aspect = (float)video.texture.width / video.texture.height;
+                    float box_aspect = size.x / size.y;
+                    if (box_aspect > texture_aspect * 1.01f)
+                    {
+                        float fraction = texture_aspect / box_aspect;
+                        float inset = size.x * (1f - fraction) * 0.5f;
+                        min.x += inset;
+                        max.x -= inset;
+                        uv = new Rect(-(1f - fraction) / (2f * fraction), 0f, 1f / fraction, 1f);
+                    }
+                    else if (box_aspect < texture_aspect / 1.01f)
+                    {
+                        float fraction = box_aspect / texture_aspect;
+                        float inset = size.y * (1f - fraction) * 0.5f;
+                        min.y += inset;
+                        max.y -= inset;
+                        uv = new Rect(0f, -(1f - fraction) / (2f * fraction), 1f, 1f / fraction);
+                    }
+                    if (video.uvRect != uv) video.uvRect = uv;
                     min = new Vector2(Mathf.Clamp01(min.x / Screen.width), Mathf.Clamp01(min.y / Screen.height));
                     max = new Vector2(Mathf.Clamp01(max.x / Screen.width), Mathf.Clamp01(max.y / Screen.height));
                     SetBar(0, Vector2.zero, new Vector2(min.x, 1f));
@@ -557,6 +602,7 @@ namespace SpiritOfTheSamuraiUltrawide
             {
                 visible = false;
             }
+            if (!visible) RestoreUv();
             backdrop_canvas.enabled = visible;
             was_visible = visible;
         }
@@ -570,9 +616,15 @@ namespace SpiritOfTheSamuraiUltrawide
             bars[index].color = new Color(0f, 0f, 0f, video.color.a * video.canvasRenderer.GetInheritedAlpha());
         }
 
+        private void RestoreUv()
+        {
+            if (video != null && video.uvRect != original_uv) video.uvRect = original_uv;
+        }
+
         private void OnDisable()
         {
             if (backdrop_canvas != null) backdrop_canvas.enabled = false;
+            RestoreUv();
             was_visible = false;
         }
 

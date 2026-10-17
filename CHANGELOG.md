@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+- Full-screen cutscene videos are no longer stretched to the wide canvas: they keep their own aspect
+  ratio with black bars at the sides (or top and bottom on narrower displays).
+- New option `General.SkipIntros` (on by default) skips the start-up logo videos.
+
 ## 1.9.0
 - Experimental Steam Deck / SteamOS support with Proton installation and Steam Input diagnostic instructions.
 - Fitted resolution presets are capped to the display size by default, avoiding supersampling
