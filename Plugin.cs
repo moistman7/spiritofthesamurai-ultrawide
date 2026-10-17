@@ -20,7 +20,7 @@ namespace SpiritOfTheSamuraiUltrawide
     //  - Videos are 16:9 RawImages, so the scene shows beside them instead of black bars.
     //  - Menus park their hidden pages one 16:9 screen-width off-center, which is now partly on screen.
     //  - Camera-attached backdrops and overlays (sky, vignette, damage border) are sized to the 16:9 view.
-    [BepInPlugin("renodx.spiritofthesamurai.ultrawide", "Spirit of the Samurai Ultrawide", "1.9.0")]
+    [BepInPlugin("renodx.spiritofthesamurai.ultrawide", "Spirit of the Samurai Ultrawide", "1.10.0")]
     public class Plugin : BaseUnityPlugin
     {
         private static readonly Rect FullViewport = new Rect(0f, 0f, 1f, 1f);
@@ -45,10 +45,16 @@ namespace SpiritOfTheSamuraiUltrawide
                 "Write scene inventories automatically for troubleshooting. F9 writes an inventory manually even when this is disabled.");
             SkipIntros = Config.Bind("General", "SkipIntros", true,
                 "Skip the start-up logo videos and go straight to the main menu.");
+            DialogueAdvance.Init(Config);
+            DialogueHistory.Init(Config);
+            ModMenu.Init(Config);
             Harmony.CreateAndPatchAll(typeof(Plugin));
+            Harmony.CreateAndPatchAll(typeof(DialogueAdvance));
             SceneManager.sceneLoaded += OnSceneLoaded;
             Logger.LogInfo($"Display {Display.main.systemWidth}x{Display.main.systemHeight}, ultrawide patches applied.");
         }
+
+        private void OnDestroy() => ModMenu.Shutdown();
 
         internal static void WriteSceneInventory(string phase)
         {
@@ -100,11 +106,15 @@ namespace SpiritOfTheSamuraiUltrawide
 
         private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
         {
+            ModMenu.Shutdown();
             WriteSceneInventory("loaded");
+            DialogueAdvance.SceneLoaded();
             if (mode == LoadSceneMode.Single)
             {
                 var diagnostics = new GameObject("SamuraiSceneDiagnostics");
                 diagnostics.AddComponent<SceneInventoryDiagnostic>();
+                ModMenu.Attach(diagnostics);
+                diagnostics.AddComponent<ModInputController>();
             }
             foreach (Transform root in Resources.FindObjectsOfTypeAll<Transform>())
             {

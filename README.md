@@ -14,6 +14,9 @@ and fixes the things that break once the view is wider. Includes experimental St
 - Rescales the HUD for wide screens and clips parked menu pages so neighboring pages don't peek in.
 - Widens sky backdrops and the damage-border sprite so they reach the screen edges.
 - Adds black bars outside full-screen cutscene video.
+- Adds faster automatic dialogue, an automatic/manual toggle, and session dialogue history with voice replay.
+- Adds game-styled mod settings (F1) and history (F10), with controller shortcuts and navigation.
+- Skips start-up logo videos by default (configurable).
 
 ## Requirements
 
@@ -26,7 +29,7 @@ and fixes the things that break once the view is wider. Includes experimental St
 1. Close the game and install BepInEx 5 x64 into the game folder (where `samurai.exe` is).
 2. Copy `SpiritOfTheSamuraiUltrawide.dll` to `BepInEx/plugins/` (replace any older version).
 3. Launch the game. `BepInEx/LogOutput.log` should contain
-   `Loading [Spirit of the Samurai Ultrawide 1.9.0]`.
+   `Loading [Spirit of the Samurai Ultrawide 1.10.0]`.
 
 To uninstall, delete the DLL.
 
@@ -58,7 +61,7 @@ For diagnostics without a keyboard, map a rear button to **F9** in Steam Input, 
 plugin DLL to uninstall; remove the override only if no other BepInEx plugins need it.
 
 The viewport fills 16:10, but gameplay framing, menus, cutscenes, suspend/resume, and performance
-still need verification on a Deck. This mod does not change controller support or graphics quality.
+still need verification on a Deck. Mod controller shortcuts also require hardware verification.
 
 ## Settings
 
@@ -69,7 +72,33 @@ fixes are always on. Available options:
 |---|---|---|
 | `Display.LimitResolutionToDisplay` | `true` | Cap fitted presets at the display size. Set to `false` to allow supersampling. |
 | `General.SkipIntros` | `true` | Skip the start-up logo videos and go straight to the main menu. Set to `false` to play them. |
+| `Dialogue.AutoAdvance` | `true` | Advance dialogue lines on a timer. `false` makes each line wait for the advance key. F6 toggles it in game. |
+| `Dialogue.AutoAdvanceSpeed` | `2` | How much faster than the game's default timing lines without a voice advance (1 = unchanged). |
+| `Dialogue.AdvanceOnVoiceEnd` | `true` | In automatic mode, advance a voiced line shortly after its voice clip ends. |
+| `Dialogue.VoiceEndDelay` | `0.4` | Seconds to wait after the voice clip ends before advancing. |
+| `History.Key` | `F10` | Open and close dialogue history (Esc also closes it). Up/Down selects a line; Page Up/Down, Home/End and the mouse wheel scroll. Click Replay or press Enter to replay a voiced line; Stop ends playback. Closing history or starting a new line stops replay. |
+| `History.MaxLines` | `300` | How many dialogue lines the history keeps for the session. |
+| `Dialogue.ToggleKey` | `F6` | Switch between automatic and manual advance. |
+| `Dialogue.AdvanceKey` | `Space` | Continue to the next line in manual mode (ignored when the dialogue box shows its own continue button). |
+| `Menu.Key` | `F1` | Open or close mod settings. Changes save automatically. |
+| `Controller.EnableShortcuts` | `true` | Hold Select/Back and press LB for mod settings, RB for history, or Y for automatic/manual dialogue. Button names use Xbox positions. |
 | `Diagnostics.EnableSceneInventory` | `false` | Write a scene dump to `BepInEx/diagnostics` automatically (for bug reports). F9 writes one on demand. |
+
+History and mod settings reuse loaded game panel art, menu button frames, the menu font and Xbox button icons.
+Assets are found at runtime; no game assets are included with the plugin. Scenes without these assets use a fallback.
+Voiced history entries store the voice asset path from their dialogue sequence and reload it on demand, allowing
+older lines to replay after the original clip has unloaded. History remains session-only.
+
+The mod menu offers dialogue timing, voice-end advance, history capacity, intro skipping, resolution capping,
+and controller shortcuts. Use Up/Down to select and Left/Right to adjust, or click a row and its +/− buttons.
+Enter or controller A activates; Escape or B closes. Intro skipping applies on the next launch; the resolution
+cap applies the next time the game sets its resolution.
+
+In history, controller D-pad Up/Down selects a line, A replays/stops its captured voice, LB/RB pages,
+and B closes. Enter also replays the selected line. Manual dialogue advance uses the game's own controller
+continue button. History and mod settings suspend enabled Input System actions and pause game time while open,
+then restore the prior time scale and cursor state after closing and releasing buttons. Voice audio can continue
+while game time is paused. Controller input isolation and shortcuts are not yet verified in game.
 
 ## Known limitations
 

@@ -1,9 +1,26 @@
 # Changelog
 
-## Unreleased
+## 1.10.0 — 2026-10-17
+- Fix voice tracking being cleared when finishing one subtitle synchronously starts the next. History retains
+  each voiced line's asset path and reloads voices on demand so older entries remain replayable.
+- Restyle history and mod settings with the game's loaded panel art, menu frames, font and Xbox icons;
+  add highlighted history rows, voiced-line counts, and keyboard line selection. No game assets are bundled.
+- Fix mod menu, controller shortcuts and dialogue polling not running: move per-frame work and the menu
+  renderer from the BepInEx manager to a scene-owned controller, matching the working F9/HDR hotkey pattern.
+- Mod settings panel (F1 or Select/Back + LB), with mouse, keyboard and controller navigation and saved settings.
+- Controller shortcuts: Select/Back + RB opens history; Select/Back + Y toggles automatic/manual dialogue.
+  History supports D-pad line selection, A voice replay/stop, LB/RB paging, and B to close.
+- History and mod settings pause game time and suspend Input System actions while open, restoring the previous
+  time scale, cursor and enabled actions on return. Controller behavior still needs in-game validation.
 - Full-screen cutscene videos are no longer stretched to the wide canvas: they keep their own aspect
   ratio with black bars at the sides (or top and bottom on narrower displays).
 - New option `General.SkipIntros` (on by default) skips the start-up logo videos.
+- Dialogue auto-advance is twice as fast by default (`Dialogue.AutoAdvanceSpeed`) and F6 switches to manual
+  advance, where each line waits for Space (`Dialogue.AdvanceKey`). In automatic mode a voiced line advances
+  shortly after its voice clip ends (`Dialogue.AdvanceOnVoiceEnd`).
+- Dialogue history window (F10) listing the lines shown this session.
+- Voiced history lines have Replay/Stop buttons. Voice clips are captured in both automatic and manual
+  modes; replay uses a separate audio source with the original voice volume and mixer routing.
 
 ## 1.9.0
 - Experimental Steam Deck / SteamOS support with Proton installation and Steam Input diagnostic instructions.
