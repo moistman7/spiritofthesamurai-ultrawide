@@ -45,6 +45,21 @@ namespace SpiritOfTheSamuraiUltrawide
                 "Write scene inventories automatically for troubleshooting. F9 writes an inventory manually even when this is disabled.");
             SkipIntros = Config.Bind("General", "SkipIntros", true,
                 "Skip the start-up logo videos and go straight to the main menu.");
+            if (SkipIntros.Value)
+            {
+                try
+                {
+                    if (!UnityEngine.Rendering.SplashScreen.isFinished)
+                    {
+                        UnityEngine.Rendering.SplashScreen.Stop(UnityEngine.Rendering.SplashScreen.StopBehavior.StopImmediate);
+                        Logger.LogInfo("[intro] stopped Unity splash screen.");
+                    }
+                }
+                catch (System.Exception exception)
+                {
+                    Logger.LogWarning($"[intro] could not stop Unity splash: {exception.Message}");
+                }
+            }
             DialogueAdvance.Init(Config);
             DialogueHistory.Init(Config);
             PlayerLight.Init(Config);

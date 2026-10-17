@@ -162,3 +162,7 @@ handled by small per-camera components. See the comments in `Plugin.cs`.
 
 Built on [BepInEx](https://github.com/BepInEx/BepInEx) and [Harmony](https://github.com/pardeike/Harmony).
 MIT licensed, see `LICENSE`. *The Spirit of the Samurai* belongs to its developers.
+
+## Current working snapshot
+
+See [CURRENT-BUILD.md](CURRENT-BUILD.md) for the exact installed plugin binary and [the splash settings tool](tools/SplashSettings/README.md) for the confirmed local Unity splash fix. No previous binaries or game assets are included.
