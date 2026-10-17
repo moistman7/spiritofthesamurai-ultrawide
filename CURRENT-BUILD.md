@@ -1,6 +1,6 @@
 # Current working build — 2026-10-17
 
-`BepInEx/plugins/SpiritOfTheSamuraiUltrawide.dll` is an exact copy of the installed DLL confirmed working by the user. Its assembly version remains 1.11.0; it contains the newer changes committed after the published v1.11.0 release. See `BepInEx/SHA256SUMS.txt` for its SHA-256.
+`BepInEx/plugins/SpiritOfTheSamuraiUltrawide.dll` is the v1.12.0 release build, with the same functionality as the installed development build confirmed working by the user. The release preparation updates version metadata; it does not replace the installed DLL. See `BepInEx/SHA256SUMS.txt` for its SHA-256.
 
 This snapshot includes session-only history, configurable controller shortcuts and fading feedback, controller-aware cursor visibility, Takeshi/playable Chisai/companion Chisai light suppression, conservative allocation cleanup, manual-dialogue fallback, centered cutscene skip-bar anchoring, and right-edge arrow/bag HUD positioning.
 

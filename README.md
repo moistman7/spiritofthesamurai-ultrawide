@@ -29,7 +29,7 @@ and fixes the things that break once the view is wider. Includes experimental St
 1. Close the game and install BepInEx 5 x64 into the game folder (where `samurai.exe` is).
 2. Copy `SpiritOfTheSamuraiUltrawide.dll` to `BepInEx/plugins/` (replace any older version).
 3. Launch the game. `BepInEx/LogOutput.log` should contain
-   `Loading [Spirit of the Samurai Ultrawide 1.11.0]`.
+   `Loading [Spirit of the Samurai Ultrawide 1.12.0]`.
 
 To uninstall, delete the DLL.
 
