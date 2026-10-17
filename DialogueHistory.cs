@@ -1,7 +1,5 @@
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
-using System.IO;
-using System.Threading.Tasks;
 using BepInEx.Configuration;
 using PixelCrushers.DialogueSystem;
 using UnityEngine;
@@ -29,40 +27,11 @@ namespace SpiritOfTheSamuraiUltrawide
 
         private static ConfigEntry<KeyCode> key;
         private static ConfigEntry<int> max_lines;
-        private static ConfigEntry<bool> save_history;
         private static ConfigEntry<int> text_size;
-        private static string save_path;
-        private static Task<HistoryStore.Document> load_task;
-        private static Task save_task;
-        private static int saved_revision;
-        private static int data_revision;
-        private static float save_after;
-        private static bool clear_backup;
-        private static bool save_clears_backup;
-        private static bool load_failed;
-        private static bool loaded_once;
         internal static int Revision { get; private set; }
         internal static int TextSize { get => text_size.Value; set => text_size.Value = Mathf.Clamp(value, 18, 40); }
-        internal static bool SaveHistory
-        {
-            get => save_history.Value;
-            set
-            {
-                save_history.Value = value;
-                if (value)
-                {
-                    if (!loaded_once && load_task == null) StartLoading();
-                    Changed();
-                }
-            }
-        }
 
-        private static void Changed()
-        {
-            ++Revision;
-            ++data_revision;
-            save_after = Time.unscaledTime + 2f;
-        }
+        private static void Changed() => ++Revision;
         private static HistoryWindow window;
         private static readonly Regex audio_command = new Regex(@"\bAudio(?:Wait|WaitOnce)?\s*\(\s*([^,)]+)", RegexOptions.IgnoreCase);
 
@@ -85,17 +54,7 @@ namespace SpiritOfTheSamuraiUltrawide
                 "Key that opens and closes the dialogue history window. Set to None to disable.");
             max_lines = config.Bind("History", "MaxLines", 300,
                 new ConfigDescription("How many dialogue lines to keep. Older lines are dropped.", new AcceptableValueRange<int>(10, 2000)));
-            save_history = config.Bind("History", "SaveHistory", true, "Keep dialogue history between game sessions. Disabling preserves the existing file but stops loading/saving it. Clear history removes its saved contents.");
             text_size = config.Bind("History", "TextSize", 24, new ConfigDescription("History dialogue font size at 1080p; scales with display height.", new AcceptableValueRange<int>(18, 40)));
-            save_path = Path.Combine(BepInEx.Paths.ConfigPath, "SpiritOfTheSamurai-dialogue-history.json");
-            if (SaveHistory) StartLoading();
-        }
-
-        private static void StartLoading()
-        {
-            int limit = Mathf.Clamp(max_lines.Value, 10, 2000);
-            loaded_once = true;
-            load_task = Task.Run(() => HistoryStore.Read(save_path, limit));
         }
 
         internal static Entry Record(Subtitle subtitle)
@@ -130,8 +89,6 @@ namespace SpiritOfTheSamuraiUltrawide
             entry.Volume = source.volume;
             entry.Pitch = source.pitch;
             if (!was_replayable) ++Revision;
-            ++data_revision;
-            save_after = Time.unscaledTime + 2f;
         }
 
         internal static void StopReplay()
@@ -141,92 +98,16 @@ namespace SpiritOfTheSamuraiUltrawide
 
         internal static void Tick()
         {
-            PollStorage();
             if (key.Value != KeyCode.None && Input.GetKeyDown(key.Value)) Toggle();
             else if (IsOpen && (Input.GetKeyDown(KeyCode.Escape) ||
                 (ModMenu.Pad != null && ModMenu.Pad.buttonEast.wasPressedThisFrame))) Close();
         }
 
-        private static HistoryStore.Document Snapshot()
-        {
-            var result = new HistoryStore.Document();
-            foreach (Entry entry in Entries) result.Lines.Add(new HistoryStore.Line { Speaker = entry.Speaker, Text = entry.Text,
-                VoicePath = entry.VoicePath, Volume = entry.Volume, Pitch = entry.Pitch });
-            return result;
-        }
-
-        private static void PollStorage()
-        {
-            if (load_task != null && load_task.IsCompleted)
-            {
-                if (load_task.IsFaulted)
-                {
-                    load_failed = true;
-                    Plugin.Log.LogWarning($"[history] saved history was not loaded; preserving the file: {load_task.Exception.GetBaseException().Message}");
-                }
-                else if (SaveHistory)
-                {
-                    var previous = new List<Entry>();
-                    foreach (var line in load_task.Result.Lines) previous.Add(new Entry { Speaker = line.Speaker ?? "", Text = line.Text,
-                        VoicePath = line.VoicePath, Volume = line.Volume, Pitch = line.Pitch });
-                    Entries.InsertRange(0, previous);
-                    int excess = Entries.Count - Mathf.Clamp(max_lines.Value, 10, 2000);
-                    if (excess > 0) Entries.RemoveRange(0, excess);
-                    ++Revision;
-                    Plugin.Log.LogInfo($"[history] loaded {previous.Count} saved lines.");
-                }
-                else loaded_once = false;
-                load_task = null;
-            }
-            if (save_task != null && save_task.IsCompleted)
-            {
-                if (save_task.IsFaulted)
-                {
-                    Plugin.Log.LogWarning($"[history] could not save history: {save_task.Exception.GetBaseException().Message}");
-                    saved_revision = -1;
-                    clear_backup |= save_clears_backup;
-                    save_after = Time.unscaledTime + 10f;
-                }
-                save_task = null;
-            }
-            if (save_task == null && load_task == null && !load_failed && (SaveHistory || clear_backup) &&
-                saved_revision != data_revision && Time.unscaledTime >= save_after) QueueSave();
-        }
-
-        private static void QueueSave()
-        {
-            var snapshot = SaveHistory ? Snapshot() : new HistoryStore.Document();
-            bool clear = clear_backup;
-            save_clears_backup = clear;
-            saved_revision = data_revision;
-            clear_backup = false;
-            Task previous = save_task;
-            save_task = Task.Run(async () =>
-            {
-                if (previous != null) { try { await previous.ConfigureAwait(false); } catch { } }
-                HistoryStore.Write(save_path, snapshot, clear);
-            });
-        }
-
         internal static void Clear()
         {
             StopReplay();
-            load_task = null; // A pending read must never repopulate a cleared list.
-            load_failed = false;
-            loaded_once = true;
             Entries.Clear();
             Changed();
-            clear_backup = true;
-            save_after = 0;
-        }
-
-        internal static void Flush()
-        {
-            try { load_task?.Wait(2000); } catch { } // Only block at application exit, never during a game frame.
-            PollStorage();
-            if (load_task == null && !load_failed && (SaveHistory || clear_backup) && saved_revision != data_revision) QueueSave();
-            try { save_task?.Wait(2000); }
-            catch (System.Exception e) { Plugin.Log.LogWarning($"[history] final save failed: {e.GetBaseException().Message}"); }
         }
 
         internal static void Close()

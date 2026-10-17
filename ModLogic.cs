@@ -2,6 +2,11 @@ namespace SpiritOfTheSamuraiUltrawide
 {
     internal static class ModLogic
     {
+        // Native input may run before or after the mod: never advance a newly started/replaced line.
+        internal static bool ShouldFallbackContinue(object requested, object current, int subtitleFrame,
+            int requestFrame, bool waiting) => requested != null && ReferenceEquals(requested, current) &&
+            subtitleFrame < requestFrame && waiting;
+
         // tops includes the final end position; off-screen rows are skipped with a binary search.
         internal static int FirstVisible(System.Collections.Generic.IList<float> tops, float scroll)
         {

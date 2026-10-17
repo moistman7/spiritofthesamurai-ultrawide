@@ -58,7 +58,6 @@ namespace SpiritOfTheSamuraiUltrawide
         private void OnDestroy() => ModMenu.Shutdown();
         private void OnApplicationQuit()
         {
-            DialogueHistory.Flush();
             ModMenu.FlushConfig();
         }
 
@@ -125,6 +124,31 @@ namespace SpiritOfTheSamuraiUltrawide
             }
             foreach (Transform root in Resources.FindObjectsOfTypeAll<Transform>())
             {
+                if (root.name == "StaticUI" && root.gameObject.scene.IsValid() && root.parent != null &&
+                    root.parent.name == "InGameUI" && root.GetComponent<RightHudAnchor>() == null)
+                {
+                    root.gameObject.AddComponent<RightHudAnchor>();
+                    Logger.LogInfo($"[{scene.name}] anchored arrow/bag HUD toward the right edge.");
+                }
+                // The hold-to-skip sprite is authored at x=973 from the left of a 1920-wide canvas.
+                // Re-anchor it once; leave the game's 0..270 fill scale and vertical layout untouched.
+                if (root.name == "Skip" && root.gameObject.scene.IsValid() && root.parent != null &&
+                    root.parent.GetComponent<Canvas>() != null && root.GetComponent<SpriteRenderer>() != null)
+                {
+                    RectTransform rect = root as RectTransform;
+                    CanvasScaler scaler = root.GetComponentInParent<CanvasScaler>();
+                    float reference_width = scaler != null ? scaler.referenceResolution.x : 1920f;
+                    if (rect != null && reference_width > 0f &&
+                        Mathf.Approximately(rect.anchorMin.x, 0f) && Mathf.Approximately(rect.anchorMax.x, 0f))
+                    {
+                        Vector2 position = rect.anchoredPosition;
+                        position.x -= reference_width * 0.5f;
+                        rect.anchorMin = new Vector2(0.5f, rect.anchorMin.y);
+                        rect.anchorMax = new Vector2(0.5f, rect.anchorMax.y);
+                        rect.anchoredPosition = position;
+                        Logger.LogInfo($"[{scene.name}] centered cutscene skip-bar anchor: '{GetPath(root)}'.");
+                    }
+                }
                 if (ClippedRoots.Contains(root.name) && root.gameObject.scene.IsValid() && root.GetComponent<SafeAreaClipper>() == null)
                 {
                     root.gameObject.AddComponent<SafeAreaClipper>();
@@ -301,33 +325,35 @@ namespace SpiritOfTheSamuraiUltrawide
     {
         private class Page
         {
-            public Renderer[] Renderers;
-            public Graphic[] Graphics;
+            public readonly List<Renderer> Renderers = new List<Renderer>();
+            public readonly List<Graphic> Graphics = new List<Graphic>();
         }
 
         private readonly List<Page> pages = new List<Page>();
         private readonly HashSet<Renderer> hidden_renderers = new HashSet<Renderer>();
         private readonly HashSet<Graphic> hidden_graphics = new HashSet<Graphic>();
+        private static Camera[] camera_buffer = new Camera[0];
 
         private void LateUpdate()
         {
             if (Time.frameCount % 30 == 0 || pages.Count == 0)
             {
                 RestoreVisibility();
-                pages.Clear();
-                foreach (Transform child in transform)
+                int count = transform.childCount;
+                while (pages.Count < count) pages.Add(new Page());
+                if (pages.Count > count) pages.RemoveRange(count, pages.Count - count);
+                for (int i = 0; i < count; i++)
                 {
-                    pages.Add(new Page {
-                        Renderers = child.GetComponentsInChildren<Renderer>(true),
-                        Graphics = child.GetComponentsInChildren<Graphic>(true)
-                    });
+                    Transform child = transform.GetChild(i);
+                    child.GetComponentsInChildren(true, pages[i].Renderers);
+                    child.GetComponentsInChildren(true, pages[i].Graphics);
                 }
             }
             Canvas canvas = GetComponentInParent<Canvas>();
             bool overlay = canvas != null && canvas.rootCanvas.renderMode == RenderMode.ScreenSpaceOverlay;
             Camera camera = overlay ? null
                 : canvas != null && canvas.rootCanvas.worldCamera != null ? canvas.rootCanvas.worldCamera
-                : Camera.main != null ? Camera.main : Camera.allCameras.FirstOrDefault();
+                : FallbackCamera();
             if (!overlay && camera == null)
             {
                 RestoreVisibility();
@@ -383,6 +409,17 @@ namespace SpiritOfTheSamuraiUltrawide
                     }
                 }
             }
+        }
+
+        private static Camera FallbackCamera()
+        {
+            Camera main = Camera.main;
+            if (main != null) return main;
+            int count = Camera.allCamerasCount;
+            if (count == 0) return null;
+            if (camera_buffer.Length < count) camera_buffer = new Camera[count];
+            int copied = Camera.GetAllCameras(camera_buffer);
+            return copied > 0 ? camera_buffer[0] : null;
         }
 
         private void RestoreVisibility()
@@ -514,7 +551,9 @@ namespace SpiritOfTheSamuraiUltrawide
         private readonly Image[] bars = new Image[4];
         private readonly Vector3[] corners = new Vector3[4];
         private bool was_visible;
-        private VideoPlayer[] players = new VideoPlayer[0];
+        private static VideoPlayer[] players = new VideoPlayer[0];
+        private static int players_scan_frame = -1;
+        private static int players_scene = -1;
 
         private void Awake()
         {
@@ -539,9 +578,13 @@ namespace SpiritOfTheSamuraiUltrawide
         {
             // Different cutscene objects reuse the same RenderTexture/RawImage. Never retain the first
             // matching player as the sole owner, and exclude idle black-video placeholder playback.
-            if (players.Length == 0 || Time.frameCount % 30 == 0)
+            int scene = SceneManager.GetActiveScene().handle;
+            if (players_scan_frame != Time.frameCount &&
+                (players_scene != scene || players.Length == 0 || Time.frameCount % 30 == 0))
             {
                 players = Resources.FindObjectsOfTypeAll<VideoPlayer>();
+                players_scan_frame = Time.frameCount;
+                players_scene = scene;
             }
             VideoPlayer active_player = null;
             foreach (VideoPlayer candidate in players)

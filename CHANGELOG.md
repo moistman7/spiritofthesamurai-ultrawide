@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+- Move the lower-right arrow/incense HUD together toward the ultrawide right edge, preserving 16:9 positions, spacing, scale, and counters. Recompute only when the parent canvas width changes.
+- Center the cutscene hold-to-skip bar horizontally by converting its fixed left anchor to a center anchor; preserve its original 16:9 offset, vertical layout, and fill behavior.
+- Add manual Space/controller A fallback after native input processing, guarded by subtitle identity/start frame to prevent double advancement. Use the current conversation view; allow explicit dismissal of its tracked subtitle after conversation end.
+- Hide the cursor and stale mouse hover in mod overlays during controller use; mouse movement/click/scroll restores it. Restore the game's prior cursor state on close.
+- Disable shortcut-feedback IMGUI while idle, share video-player discovery across video surfaces, reuse clipping component lists and fallback-camera buffers. Preserve scan cadence and clipping behavior; no in-game benchmark yet.
+- Also suppress companion Chisai's direct-child light (NPCS/CHISAI-PET), which has no PlayerInput.
+- Show brief fading feedback for controller auto-dialogue and player-light shortcuts without pausing or taking input focus.
+- Extend the existing F4 / Select+X player-light toggle to both playable Chisai controller variants, with original light-state restoration.
+- Keep dialogue history only for the current game session, across scene changes. Remove the saved-history toggle; old history files are ignored and no history is written to disk.
+
 ## 1.11.0 — 2026-10-17
 - Configurable controller shortcut modifier and buttons, with held D-pad/arrow navigation and numeric adjustment.
 - Dialogue, Display and Controller settings pages, saved dialogue history with atomic replacement/recovery,

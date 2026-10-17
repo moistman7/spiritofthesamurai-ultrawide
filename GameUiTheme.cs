@@ -135,7 +135,7 @@ namespace SpiritOfTheSamuraiUltrawide
 
         internal static bool Button(Rect rect, string label, GUIStyle style, bool selected = false)
         {
-            bool highlight = selected || rect.Contains(Event.current.mousePosition);
+            bool highlight = selected || (Cursor.visible && rect.Contains(Event.current.mousePosition));
             Sprite frame = highlight ? Find("menuFrame_hightlighted", "menuFrame_Clicked", "menuFrame") : Find("menuFrame");
             if (frame != null) DrawSprite(rect, frame, Color.white, true);
             else Fill(rect, highlight ? new Color(0.35f, 0.18f, 0.09f, 0.9f) : new Color(0.14f, 0.08f, 0.05f, 0.9f));

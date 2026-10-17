@@ -22,6 +22,7 @@ namespace SpiritOfTheSamuraiUltrawide
         private static float config_save_after;
         private static Task config_save_task;
         private static bool owns_input;
+        private static bool controller_cursor;
         private static float saved_time_scale;
         private static bool saved_cursor;
         private static CursorLockMode saved_lock;
@@ -33,7 +34,7 @@ namespace SpiritOfTheSamuraiUltrawide
         private float confirm_clear_until;
         private static readonly string[] page_names = { "Dialogue", "Display", "Controller" };
         private static readonly int[][] page_rows = {
-            new[] { 0, 1, 2, 3, 4, 10, 11, 12, 8, 9 },
+            new[] { 0, 1, 2, 3, 4, 10, 12, 8, 9 },
             new[] { 5, 6, 17, 9 },
             new[] { 7, 13, 14, 15, 16, 18, 9 }
         };
@@ -121,6 +122,7 @@ namespace SpiritOfTheSamuraiUltrawide
         {
             SaveConfigTick();
             Gamepad pad = Pad;
+            UpdateCursorMode(pad);
             int shortcut = ControllerInput.Shortcut(pad, ControllerShortcuts);
             if ((menu_key.Value != KeyCode.None && Input.GetKeyDown(menu_key.Value)) ||
                 shortcut == 1) Toggle();
@@ -133,11 +135,13 @@ namespace SpiritOfTheSamuraiUltrawide
             else if (!InputBlocked && shortcut == 3)
             {
                 DialogueAdvance.Toggle();
+                ShortcutFeedback.Show(DialogueAdvance.AutoAdvance ? "Auto dialogue enabled" : "Manual dialogue enabled");
                 consumed_frame = Time.frameCount;
             }
             else if (!InputBlocked && shortcut == 4)
             {
                 PlayerLight.Enabled = !PlayerLight.Enabled;
+                ShortcutFeedback.Show(PlayerLight.Enabled ? "Player lights: game default" : "Player lights disabled");
                 consumed_frame = Time.frameCount;
             }
             else if (IsOpen)
@@ -159,7 +163,7 @@ namespace SpiritOfTheSamuraiUltrawide
                     bool activate = Input.GetKeyDown(KeyCode.Return) || (pad != null && pad.buttonSouth.wasPressedThisFrame);
                     int row = page_rows[window.page][window.selected];
                     // Only numeric/cycling rows repeat. A held direction must not flip toggles repeatedly.
-                    bool toggle = row == 0 || row == 2 || row == 5 || row == 6 || row == 7 || row == 11 || row == 17;
+                    bool toggle = row == 0 || row == 2 || row == 5 || row == 6 || row == 7 || row == 17;
                     bool tapped = toggle && Direction(KeyCode.LeftArrow, KeyCode.RightArrow, pad?.dpad.left, pad?.dpad.right) != 0;
                     if (activate || tapped || (horizontal != 0 && IsNumeric(row))) Change(row, horizontal == 0 ? 1 : horizontal);
                 }
@@ -200,7 +204,7 @@ namespace SpiritOfTheSamuraiUltrawide
                 closed_frame = Time.frameCount;
                 Time.timeScale = 0f;
                 Cursor.lockState = CursorLockMode.None;
-                Cursor.visible = true;
+                Cursor.visible = !controller_cursor;
                 // Snapshot individual actions: a partly enabled map must stay partly enabled on return.
                 if (!input_dirty || input_sync_frame == Time.frameCount) return;
                 input_sync_frame = Time.frameCount;
@@ -214,6 +218,25 @@ namespace SpiritOfTheSamuraiUltrawide
                 }
             }
             else if (owns_input && Time.frameCount > closed_frame + 1 && ControlsReleased()) ReleaseInput();
+        }
+
+        private static void UpdateCursorMode(Gamepad pad)
+        {
+            if (pad != null && (pad.selectButton.wasPressedThisFrame || pad.startButton.wasPressedThisFrame ||
+                pad.buttonSouth.wasPressedThisFrame || pad.buttonNorth.wasPressedThisFrame ||
+                pad.buttonEast.wasPressedThisFrame || pad.buttonWest.wasPressedThisFrame ||
+                pad.leftShoulder.wasPressedThisFrame || pad.rightShoulder.wasPressedThisFrame ||
+                pad.leftTrigger.wasPressedThisFrame || pad.rightTrigger.wasPressedThisFrame ||
+                pad.leftStickButton.wasPressedThisFrame || pad.rightStickButton.wasPressedThisFrame ||
+                pad.dpad.ReadValue().sqrMagnitude > 0f ||
+                pad.leftStick.ReadValue().sqrMagnitude > 0.25f || pad.rightStick.ReadValue().sqrMagnitude > 0.25f))
+                controller_cursor = true;
+            Mouse mouse = Mouse.current;
+            // Real mouse input wins when both devices are used in the same frame.
+            if (mouse != null && (mouse.delta.ReadValue().sqrMagnitude >= 1f ||
+                mouse.leftButton.wasPressedThisFrame || mouse.rightButton.wasPressedThisFrame ||
+                mouse.middleButton.wasPressedThisFrame || mouse.scroll.ReadValue().sqrMagnitude > 0f))
+                controller_cursor = false;
         }
 
         private static bool ControlsReleased()
@@ -276,13 +299,12 @@ namespace SpiritOfTheSamuraiUltrawide
                 case 7: return "Controller shortcuts: " + (ControllerShortcuts ? "On" : "Off");
                 case 8: return "Open dialogue history";
                 case 10: return $"History text size: {DialogueHistory.TextSize}";
-                case 11: return "Save dialogue history: " + (DialogueHistory.SaveHistory ? "On" : "Off");
                 case 12: return window.confirm_clear_until > Time.unscaledTime ? "Clear history? Press again to confirm" : "Clear dialogue history";
                 case 13: return "Shortcut modifier: " + ControllerInput.Name(ControllerInput.Modifier.Value);
                 case 14: return "Mod menu button: " + ControllerInput.Name(ControllerInput.Menu.Value);
                 case 15: return "History button: " + ControllerInput.Name(ControllerInput.History.Value);
                 case 16: return "Auto/manual button: " + ControllerInput.Name(ControllerInput.Auto.Value);
-                case 17: return "Existing player lights: " + (PlayerLight.Enabled ? "Game default" : "Off");
+                case 17: return "Player lights (Takeshi / Chisai): " + (PlayerLight.Enabled ? "Game default" : "Off");
                 case 18: return "Player light button: " + ControllerInput.Name(ControllerInput.Light.Value);
                 default: return "Close";
             }
@@ -303,7 +325,6 @@ namespace SpiritOfTheSamuraiUltrawide
                 case 8: Close(); DialogueHistory.Toggle(); break;
                 case 9: Close(); break;
                 case 10: DialogueHistory.TextSize += direction * 2; break;
-                case 11: DialogueHistory.SaveHistory = !DialogueHistory.SaveHistory; break;
                 case 12:
                     if (window.confirm_clear_until > Time.unscaledTime) { DialogueHistory.Clear(); window.confirm_clear_until = 0; }
                     else window.confirm_clear_until = Time.unscaledTime + 4;
@@ -419,10 +440,15 @@ namespace SpiritOfTheSamuraiUltrawide
             PlayerLight.Tick();
         }
 
-        private void OnDisable() => ModMenu.Shutdown();
+        private void Awake() => ShortcutFeedback.Init(gameObject);
+
+        private void OnDisable()
+        {
+            ShortcutFeedback.Clear();
+            ModMenu.Shutdown();
+        }
         private void OnApplicationQuit()
         {
-            DialogueHistory.Flush();
             ModMenu.FlushConfig();
             PlayerLight.Restore();
         }

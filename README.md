@@ -78,7 +78,6 @@ fixes are always on. Available options:
 | `Dialogue.VoiceEndDelay` | `0.4` | Seconds to wait after the voice clip ends before advancing. |
 | `History.Key` | `F10` | Open and close dialogue history (Esc also closes it). Up/Down selects a line; Page Up/Down, Home/End and the mouse wheel scroll. Click Replay or press Enter to replay a voiced line; Stop ends playback. Closing history or starting a new line stops replay. |
 | `History.MaxLines` | `300` | How many dialogue lines to keep (10–2000); oldest lines are dropped. |
-| `History.SaveHistory` | `true` | Keep dialogue history between game sessions in `BepInEx/config/SpiritOfTheSamurai-dialogue-history.json`. |
 | `History.TextSize` | `24` | History dialogue text size at 1080p (18–40); scales with display height. |
 | `Dialogue.ToggleKey` | `F6` | Switch between automatic and manual advance. |
 | `Dialogue.AdvanceKey` | `Space` | Continue to the next line in manual mode (ignored when the dialogue box shows its own continue button). |
@@ -91,18 +90,24 @@ fixes are always on. Available options:
 | `Controller.LightButton` | `West` | Existing player-light shortcut (X), combined with Modifier. |
 | `Controller.RepeatDelay` | `0.35` | Delay before held D-pad/arrow navigation repeats, in seconds. |
 | `Controller.RepeatInterval` | `0.09` | Seconds between held navigation steps. |
-| `PlayerLight.Enabled` | `true` | Preserve the game's existing player lights; `false` suppresses direct child 2D lights on playable SamuraiController objects. Adds no light and does not change scenery lights. |
+| `PlayerLight.Enabled` | `true` | Preserve the game's existing player lights; `false` suppresses direct child 2D lights on Takeshi and playable/companion Chisai. Adds no light and does not change scenery lights. |
 | `PlayerLight.ToggleKey` | `F4` | Toggle existing player lights; `None` disables the keyboard shortcut. |
 | `Diagnostics.EnableSceneInventory` | `false` | Write a scene dump to `BepInEx/diagnostics` automatically (for bug reports). F9 writes one on demand. |
 
 History and mod settings reuse loaded game panel art, menu button frames, the menu font and Xbox button icons.
 Assets are found at runtime; no game assets are included with the plugin. Scenes without these assets use a fallback.
 Voiced history entries store the voice asset path from their dialogue sequence and reload it on demand, allowing
-older lines to replay after the original clip has unloaded. Text and voice asset paths are saved by default;
-audio files are not copied. Saved history is shared across save slots and stays local. Disable SaveHistory to
-stop saving/loading without deleting the existing file. Clear dialogue history in the menu requires a second
-press to confirm and removes both saved contents and the recovery copy. Corrupt history files are preserved
-if neither the primary nor recovery file can load; clear history explicitly to start fresh.
+older lines to replay after the original clip has unloaded. History is kept only in memory for the current
+game session, survives scene changes, and starts empty on each launch. Older saved-history files are ignored.
+Clear dialogue history in the menu requires a second press to confirm and clears the current session's lines.
+
+The player-light toggle covers Takeshi, playable Chisai, and companion Chisai. F4 or Select/Back + X
+suppresses their existing direct-child lights and restores the original states when enabled again.
+Controller auto-dialogue and player-light shortcuts show a brief fading status message without pausing gameplay.
+Controller use hides the cursor in the mod overlays; mouse movement, clicks, or scrolling brings it back.
+Manual dialogue accepts Space or controller A, with a fallback if the native Continue input does not respond.
+The fallback checks the subtitle identity and start frame to avoid advancing twice.
+The lower-right arrow/bag HUD follows the ultrawide right edge, and the cutscene skip bar uses a centered anchor.
 
 The mod menu has Dialogue, Display and Controller pages. LB/RB or Tab changes page; mouse tabs also work.
 Use Up/Down to select and Left/Right to adjust, or click a row and its +/− buttons. Hold the D-pad or arrow
@@ -119,7 +124,7 @@ while game time is paused. The current development changes were confirmed workin
 other controllers and platforms still need testing.
 
 To reduce frame-time spikes, history layout is cached, built at up to 32 lines per frame and draws only visible
-rows. Config/history writes are debounced and performed by background workers. Input actions are suspended
+rows. Config writes are debounced and performed by background workers. Input actions are suspended
 on overlay entry or when newly enabled rather than enumerated each frame. Voice scans reuse buffers, and
 per-line voice logging runs only with Diagnostics.EnableSceneInventory enabled. These changes have not yet
 been benchmarked in game.

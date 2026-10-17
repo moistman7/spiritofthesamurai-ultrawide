@@ -17,6 +17,7 @@
 
   <ItemGroup>
     <Compile Remove="tests\**\*.cs" />
+    <Compile Remove="HistoryStore.cs" />
     <Reference Include="Unity.RenderPipelines.Universal.Runtime" HintPath="$(ManagedDir)\Unity.RenderPipelines.Universal.Runtime.dll" Private="false" />
     <Reference Include="BepInEx" HintPath="$(BepInExCoreDir)\BepInEx.dll" Private="false" />
     <Reference Include="0Harmony" HintPath="$(BepInExCoreDir)\0Harmony.dll" Private="false" />

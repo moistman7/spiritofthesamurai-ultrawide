@@ -7,6 +7,13 @@ void Check(bool condition, string name)
     assertions++;
 }
 
+var subtitle = new object();
+Check(ModLogic.ShouldFallbackContinue(subtitle, subtitle, 10, 20, true), "Unchanged waiting subtitle gets fallback");
+Check(!ModLogic.ShouldFallbackContinue(subtitle, new object(), 10, 20, true), "Native advance after mod input cannot skip next line");
+Check(!ModLogic.ShouldFallbackContinue(subtitle, subtitle, 20, 20, true), "Native advance before mod input cannot skip next line");
+Check(!ModLogic.ShouldFallbackContinue(subtitle, subtitle, 10, 20, false), "Completed subtitle is not continued again");
+Check(!ModLogic.ShouldFallbackContinue(null, null, 10, 20, true), "Missing subtitle never advances");
+
 var repeat = new RepeatGate();
 Check(repeat.Step(1, 0) == 1, "Initial press responds immediately");
 Check(repeat.Step(1, 0.2f) == 0, "Initial delay prevents premature repeat");

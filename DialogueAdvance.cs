@@ -48,7 +48,12 @@ namespace SpiritOfTheSamuraiUltrawide
         private static DialogueHistory.Entry history_entry;
         private static readonly List<AudioSource> source_buffer = new List<AudioSource>();
         private static readonly Transform[] voice_roots = new Transform[3];
-        private static StandardUISubtitlePanel[] subtitle_panels;
+        private static ConversationView current_view;
+        private static IDialogueUI last_ui;
+        private static Subtitle last_shown;
+        private static Subtitle pending_advance;
+        private static int pending_frame = -1;
+        private static int subtitle_frame = -1;
 
         internal static void Init(ConfigFile config)
         {
@@ -63,7 +68,7 @@ namespace SpiritOfTheSamuraiUltrawide
             toggle_key = config.Bind("Dialogue", "ToggleKey", KeyCode.F6,
                 "Key that switches between automatic and manual dialogue advance.");
             advance_key = config.Bind("Dialogue", "AdvanceKey", KeyCode.Space,
-                "Key that continues to the next line in manual mode, unless the dialogue box already has its own continue button. Set to None to disable.");
+                "Key that continues in manual mode. A same-subtitle fallback handles unavailable native Continue input. Set to None to disable the keyboard shortcut.");
         }
 
         // The Dialogue System object is created per scene; find it after a load and once in a while after that.
@@ -71,7 +76,11 @@ namespace SpiritOfTheSamuraiUltrawide
         {
             line = null;
             voice = null;
-            subtitle_panels = null;
+            current_view = null;
+            last_ui = null;
+            last_shown = null;
+            pending_advance = null;
+            pending_frame = -1;
             Hook();
         }
 
@@ -80,7 +89,11 @@ namespace SpiritOfTheSamuraiUltrawide
             DialogueHistory.Tick();
             if (Time.frameCount % 120 == 0) Hook();
             if (!ModMenu.InputBlocked && toggle_key.Value != KeyCode.None && Input.GetKeyDown(toggle_key.Value)) Toggle();
-            if (advance_key.Value != KeyCode.None && Input.GetKeyDown(advance_key.Value)) Advance();
+            ProcessPendingAdvance();
+            var pad = ModMenu.Pad;
+            bool controller_advance = pad != null && pad.buttonSouth.wasPressedThisFrame &&
+                !(ControllerInput.Modifier.Value != PadButton.None && ControllerInput.ModifierHeld(pad));
+            if ((advance_key.Value != KeyCode.None && Input.GetKeyDown(advance_key.Value)) || controller_advance) Advance();
             if (line != null) WatchVoice();
         }
 
@@ -146,31 +159,49 @@ namespace SpiritOfTheSamuraiUltrawide
 
         private static void Continue()
         {
-            StandardDialogueUI ui = DialogueManager.hasInstance ? DialogueManager.instance.standardDialogueUI : null;
-            if (ui == null) return;
+            if (current_view == null) return;
             last_advance = Time.unscaledTime;
+            // Use the actual view, including conversation-specific UI overrides.
+            // FinishSubtitle may synchronously start the next line; never clear that new state afterward.
             line = null;
-            ui.OnContinue();
+            current_view.HandleContinueButtonClick();
         }
 
         private static void Advance()
         {
-            if (ModMenu.InputBlocked || auto_advance.Value || !DialogueManager.hasInstance || !DialogueManager.isConversationActive) return;
-            if (Time.unscaledTime - last_advance < 0.25f) return;
-            // A visible continue button takes the game's own accept input; calling Continue as well would skip two lines.
-            if (subtitle_panels == null)
-            {
-                StandardDialogueUI ui = DialogueManager.instance.standardDialogueUI;
-                if (ui == null) return;
-                subtitle_panels = ui.GetComponentsInChildren<StandardUISubtitlePanel>(true);
-            }
-            foreach (StandardUISubtitlePanel panel in subtitle_panels)
-            {
-                if (panel != null && panel.continueButton != null && panel.continueButton.gameObject.activeInHierarchy) return;
-            }
-            Continue();
+            if (ModMenu.InputBlocked || auto_advance.Value || !DialogueManager.hasInstance) return;
+            if (Time.unscaledTime - last_advance < 0.25f || last_shown == null || subtitle_frame >= Time.frameCount) return;
+            // Let the native button handle this press first. The next frame checks subtitle identity,
+            // so a working native Continue can never make this fallback skip the following line.
+            pending_advance = last_shown;
+            pending_frame = Time.frameCount;
         }
 
+        private static void ProcessPendingAdvance()
+        {
+            if (pending_frame < 0 || Time.frameCount <= pending_frame) return;
+            Subtitle requested = pending_advance;
+            int requested_frame = pending_frame;
+            pending_frame = -1;
+            pending_advance = null;
+            if (ModMenu.InputBlocked || auto_advance.Value || !DialogueManager.hasInstance ||
+                !ReferenceEquals(requested, last_shown)) return;
+            if (DialogueManager.isConversationActive)
+            {
+                if (current_view == null || !ModLogic.ShouldFallbackContinue(requested, line,
+                    subtitle_frame, requested_frame, current_view.isWaitingForContinue)) return;
+                Plugin.Log.LogInfo("[dialogue] native Continue did not advance; continuing the same waiting subtitle.");
+                Continue();
+            }
+            else if (last_ui != null)
+            {
+                // Only dismiss the subtitle recorded by this mod; never stop a conversation or close all UI.
+                last_ui.HideSubtitle(requested);
+                last_shown = null;
+                last_advance = Time.unscaledTime;
+                Plugin.Log.LogInfo("[dialogue] dismissed the tracked subtitle after its conversation ended.");
+            }
+        }
         // The voice clip is an AudioSource that starts playing just after the line does, on the speaker, the listener
         // or the Dialogue Manager. Prefer one whose clip name appears in the line's sequence.
         private static AudioSource FindVoice()
@@ -249,11 +280,14 @@ namespace SpiritOfTheSamuraiUltrawide
         // Called for every line the Dialogue System shows. Lines with a voice keep the game's timing.
         [HarmonyPrefix]
         [HarmonyPatch(typeof(ConversationView), nameof(ConversationView.StartSubtitle))]
-        private static void StartSubtitlePrefix(Subtitle subtitle)
+        private static void StartSubtitlePrefix(ConversationView __instance, Subtitle subtitle)
         {
             DialogueHistory.StopReplay();
             history_entry = DialogueHistory.Record(subtitle);
-            subtitle_panels = null;
+            current_view = __instance;
+            last_ui = __instance.dialogueUI;
+            last_shown = subtitle;
+            subtitle_frame = Time.frameCount;
             line = subtitle;
             line_start = Time.unscaledTime;
             next_scan = 0f;
