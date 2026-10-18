@@ -1,9 +1,12 @@
 # Changelog
 
+## 1.15.0 — 2026-10-18
+- Add a screen vignette toggle (Display page of the mod menu, F8, `[Vignette] DisableVignette` / `ToggleKey`), moved from the RenoDX HUD companion. Hides only `UI/Canvas/vignette`; default is the game's own vignette. The scene-load scan is shared with existing discovery, so no extra per-frame or per-load cost beyond one component on one object.
+
 ## 1.14.0 — 2026-10-17
 - Add game-themed Keyboard/Controller binding pickers with dropdown arrows, clear top-row/numeric-keypad labels, current-binding markers, conflict explanations, and navigation that skips unavailable choices.
 - Reset only the current device's bindings after confirmation. Keep settings accessible and cancel destructive confirmations when navigating away.
-- Align shared default shortcuts with Belmont's Curse: F1 / Select+LB settings, F10 / Select+Y history, F6 / Select+RB combined auto/manual dialogue. Preserve existing saved bindings; keep F4 / Select+X lights and reserve F7/F8 for the HDR companion.
+- Align shared default shortcuts with Belmont's Curse: F1 / Select+LB settings, F10 / Select+Y history, F6 / Select+RB combined auto/manual dialogue. Preserve existing saved bindings; keep F4 / Select+X lights and reserve F7 for the HDR companion.
 - Extend loading fades to the ultrawide edges using actual sprite corners and black UI panels in LoadingScreen, retaining native fade animation. User confirmed coverage works.
 - Cache binding labels/config entries and notification measurements; draw only visible binding options. Consume controller chords inside the picker to prevent replay after closing.
 - Skip inactive menu-page bounds and unnecessary 16:9 clipping; share periodic canvas discovery between cameras; reuse sprite-discovery lists; skip inactive video surfaces and unchanged video-bar layout/color writes. Retain existing mod features and UI; no measured frame-time improvement is claimed.

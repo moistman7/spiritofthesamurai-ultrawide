@@ -29,7 +29,7 @@ and fixes the things that break once the view is wider. Includes experimental St
 1. Close the game and install BepInEx 5 x64 into the game folder (where `samurai.exe` is).
 2. Copy `SpiritOfTheSamuraiUltrawide.dll` to `BepInEx/plugins/` (replace any older version).
 3. Launch the game. `BepInEx/LogOutput.log` should contain
-   `Loading [Spirit of the Samurai Ultrawide 1.14.0]`.
+   `Loading [Spirit of the Samurai Ultrawide 1.15.0]`.
 
 To uninstall, delete the DLL.
 
@@ -92,6 +92,8 @@ fixes are always on. Available options:
 | `Controller.RepeatInterval` | `0.09` | Seconds between held navigation steps. |
 | `PlayerLight.Enabled` | `true` | Preserve the game's existing player lights; `false` suppresses direct child 2D lights on Takeshi and playable/companion Chisai. Adds no light and does not change scenery lights. |
 | `PlayerLight.ToggleKey` | `F4` | Toggle existing player lights; `None` disables the keyboard shortcut. |
+| `Vignette.DisableVignette` | `false` | Hide the game's `UI/Canvas/vignette` sprite (also in the mod menu Display page). |
+| `Vignette.ToggleKey` | `F8` | Toggle the vignette sprite; `None` disables the keyboard shortcut. |
 | `Diagnostics.EnableSceneInventory` | `false` | Write a scene dump to `BepInEx/diagnostics` automatically (for bug reports). F9 writes one on demand. |
 
 History and mod settings reuse loaded game panel art, menu button frames, the menu font and Xbox button icons.

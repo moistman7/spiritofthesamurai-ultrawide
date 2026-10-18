@@ -43,7 +43,7 @@ namespace SpiritOfTheSamuraiUltrawide
         private static readonly string[] page_names = { "Dialogue", "Display", "Controller", "Keyboard" };
         private static readonly int[][] page_rows = {
             new[] { 0, 1, 2, 3, 4, 10, 12, 8, 9 },
-            new[] { 5, 6, 17, 9 },
+            new[] { 5, 6, 17, 11, 9 },
             new[] { 7, 13, 14, 15, 16, 18, 24, 9 },
             new[] { 19, 20, 21, 22, 23, 24, 9 }
         };
@@ -180,7 +180,7 @@ namespace SpiritOfTheSamuraiUltrawide
                     bool activate = Input.GetKeyDown(KeyCode.Return) || (pad != null && pad.buttonSouth.wasPressedThisFrame);
                     int row = page_rows[window.page][window.selected];
                     // Only numeric/cycling rows repeat. A held direction must not flip toggles repeatedly.
-                    bool toggle = row == 0 || row == 2 || row == 5 || row == 6 || row == 7 || row == 17;
+                    bool toggle = row == 0 || row == 2 || row == 5 || row == 6 || row == 7 || row == 11 || row == 17;
                     bool tapped = toggle && Direction(KeyCode.LeftArrow, KeyCode.RightArrow, pad?.dpad.left, pad?.dpad.right) != 0;
                     if (activate || tapped || (horizontal != 0 && IsNumeric(row))) Change(row, horizontal == 0 ? 1 : horizontal);
                 }
@@ -386,6 +386,7 @@ namespace SpiritOfTheSamuraiUltrawide
                 case 7: return "Controller shortcuts: " + (ControllerShortcuts ? "On" : "Off");
                 case 8: return "Open dialogue history";
                 case 10: return $"History text size: {DialogueHistory.TextSize}";
+                case 11: return "Screen vignette: " + (Vignette.Disabled ? "Hidden" : "Game default");
                 case 12: return window.confirm_clear_until > Time.unscaledTime ? "Clear history? Press again to confirm" : "Clear dialogue history";
                 case 13: return "Shortcut modifier: " + ControllerInput.Name(ControllerInput.Modifier.Value);
                 case 14: return "Mod menu button: " + ControllerInput.Name(ControllerInput.Menu.Value);
@@ -437,6 +438,7 @@ namespace SpiritOfTheSamuraiUltrawide
                 case 8: Close(); DialogueHistory.Toggle(); break;
                 case 9: Close(); break;
                 case 10: DialogueHistory.TextSize += direction * 2; break;
+                case 11: Vignette.Disabled = !Vignette.Disabled; break;
                 case 12:
                     if (window.confirm_clear_until > Time.unscaledTime) { DialogueHistory.Clear(); window.confirm_clear_until = 0; }
                     else window.confirm_clear_until = Time.unscaledTime + 4;
@@ -576,6 +578,7 @@ namespace SpiritOfTheSamuraiUltrawide
             ModMenu.Tick();
             DialogueAdvance.Tick();
             PlayerLight.Tick();
+            Vignette.Tick();
         }
 
         private void Awake() => ShortcutFeedback.Init(gameObject);
